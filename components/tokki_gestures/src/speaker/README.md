@@ -9,6 +9,13 @@ is explicitly a synthesized bird-like sound, not a field recording.
 `speaker.alert` is a short neutral tone. A bark and parameterized greetings are
 deferred rather than approximated under misleading action IDs.
 
+`speaker.chime` adds two ascending fixed notes (784/1047 Hz, 160/240 ms), with
+a 60 ms gap. `speaker.ping` is a single 1320 Hz, 100 ms tone. Both also use the
+existing 250 ms lead-in and trailing silence. No new audio file is needed.
+Fixed tone sequences are defined in `speaker_sound_steps` and reused by the
+I2S player and host preview export. Fade-in/out and the 20% ceiling are retained;
+all actions are serialized and release their I2S channel on return.
+
 ## Speech asset provenance
 
 `components/tokki_speaker/audio/drink_water.wav` was generated locally on

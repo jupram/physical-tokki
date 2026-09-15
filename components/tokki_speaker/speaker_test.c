@@ -260,16 +260,19 @@ static esp_err_t play_sound(bool self_test, tokki_speaker_sound_t sound)
         } else if (sound == TOKKI_SPEAKER_DRINK_WATER) {
             err = write_speech(channel, drink_water_wav_start,
                                 drink_water_wav_end - drink_water_wav_start);
-        } else if (sound == TOKKI_SPEAKER_CHIRP) {
-            err = write_tone(channel, 1800, 3000, 120);
-            if (err == ESP_OK) {
-                err = write_silence(channel, 80);
-            }
-            if (err == ESP_OK) {
-                err = write_tone(channel, 2200, 3600, 120);
-            }
         } else {
-            err = write_tone(channel, 660, 660, 180);
+            size_t count = 0;
+            const speaker_tone_step_t *steps = speaker_sound_steps(sound, &count);
+            if (steps == NULL) {
+                err = ESP_ERR_INVALID_ARG;
+            }
+            for (size_t index = 0; err == ESP_OK && index < count; ++index) {
+                err = write_tone(channel, steps[index].start_hz,
+                                  steps[index].end_hz, steps[index].duration_ms);
+                if (err == ESP_OK && steps[index].silence_ms > 0) {
+                    err = write_silence(channel, steps[index].silence_ms);
+                }
+            }
         }
     }
     if (err == ESP_OK) {
@@ -298,7 +301,7 @@ esp_err_t speaker_test_run(void)
 
 esp_err_t tokki_speaker_play(tokki_speaker_sound_t sound)
 {
-    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_ALERT) {
+    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_PING) {
         return ESP_ERR_INVALID_ARG;
     }
     return play_sound(false, sound);

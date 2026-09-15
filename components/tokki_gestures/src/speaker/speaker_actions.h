@@ -5,3 +5,5 @@
 extern const tokki_action_descriptor_t TOKKI_SPEAKER_DRINK_WATER_ACTION;
 extern const tokki_action_descriptor_t TOKKI_SPEAKER_CHIRP_ACTION;
 extern const tokki_action_descriptor_t TOKKI_SPEAKER_ALERT_ACTION;
+extern const tokki_action_descriptor_t TOKKI_SPEAKER_CHIME_ACTION;
+extern const tokki_action_descriptor_t TOKKI_SPEAKER_PING_ACTION;

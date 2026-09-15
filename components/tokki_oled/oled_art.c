@@ -28,6 +28,30 @@ static void set_pixel(uint8_t *framebuffer, int column, int row)
     }
 }
 
+static void draw_disc(uint8_t *framebuffer, int center_x, int center_y, int radius)
+{
+    for (int row = -radius; row <= radius; ++row) {
+        for (int column = -radius; column <= radius; ++column) {
+            if (row * row + column * column <= radius * radius) {
+                set_pixel(framebuffer, center_x + column, center_y + row);
+            }
+        }
+    }
+}
+
+static void draw_stroke(uint8_t *framebuffer, int start_x, int start_y,
+                        int end_x, int end_y)
+{
+    int delta_x = end_x - start_x;
+    int delta_y = end_y - start_y;
+    int steps = (delta_x < 0 ? -delta_x : delta_x) + (delta_y < 0 ? -delta_y : delta_y);
+    for (int step = 0; step <= steps; ++step) {
+        int column = start_x + (steps == 0 ? 0 : delta_x * step / steps);
+        int row = start_y + (steps == 0 ? 0 : delta_y * step / steps);
+        draw_disc(framebuffer, column, row, 2);
+    }
+}
+
 static void draw_word(uint8_t *framebuffer, const char *word, int top)
 {
     int left = (TOKKI_OLED_WIDTH - ((int) strlen(word) * 12 - 2)) / 2;
@@ -57,7 +81,7 @@ esp_err_t tokki_oled_render_art(uint8_t *framebuffer, size_t size,
                                 tokki_oled_art_t art, unsigned frame)
 {
     if (framebuffer == NULL || size != TOKKI_OLED_FRAME_SIZE ||
-        art < TOKKI_OLED_ART_DRINK_WATER || art > TOKKI_OLED_ART_FIRE) {
+        art < TOKKI_OLED_ART_DRINK_WATER || art > TOKKI_OLED_ART_EXCLAMATION) {
         return ESP_ERR_INVALID_ARG;
     }
     memset(framebuffer, 0, size);
@@ -67,8 +91,47 @@ esp_err_t tokki_oled_render_art(uint8_t *framebuffer, size_t size,
         return ESP_OK;
     }
 
+    if (art == TOKKI_OLED_ART_CHECKMARK) {
+        unsigned progress = frame > 8 ? 8 : frame;
+        int first = progress > 3 ? 3 : (int) progress;
+        draw_stroke(framebuffer, 40, 33, 40 + first * 5, 33 + first * 4);
+        if (progress > 3) {
+            int second = (int) progress - 3;
+            draw_stroke(framebuffer, 55, 45, 55 + second * 6, 45 - second * 6);
+        }
+        return ESP_OK;
+    }
+    if (art == TOKKI_OLED_ART_THINKING) {
+        unsigned active_dot = frame / 6;
+        if (active_dot > 2) {
+            active_dot = 2;
+        }
+        for (unsigned dot = 0; dot < 3; ++dot) {
+            draw_disc(framebuffer, 42 + (int) dot * 22, 32,
+                       dot == active_dot ? 6 : 3);
+        }
+        return ESP_OK;
+    }
+
     static const int motion[] = {0, 1, 2, 1, 0, -1, -2, -1};
     int offset = motion[(frame / 3) % 8];
+    if (art == TOKKI_OLED_ART_HEART) {
+        draw_disc(framebuffer, 55, 26, 11 + offset);
+        draw_disc(framebuffer, 73, 26, 11 + offset);
+        for (int row = 26; row <= 50 + offset; ++row) {
+            int half_width = (50 + offset - row) * (20 + offset) / (24 + offset);
+            for (int column = 64 - half_width; column <= 64 + half_width; ++column) {
+                set_pixel(framebuffer, column, row);
+            }
+        }
+        return ESP_OK;
+    }
+    if (art == TOKKI_OLED_ART_EXCLAMATION) {
+        int growth = frame < 5 ? (int) frame : 4;
+        draw_stroke(framebuffer, 64, 34 - growth * 5, 64, 36);
+        draw_disc(framebuffer, 64, 47, 3);
+        return ESP_OK;
+    }
     for (int row = 0; row < TOKKI_OLED_HEIGHT; ++row) {
         for (int column = 0; column < TOKKI_OLED_WIDTH; ++column) {
             int horizontal = column - 64;

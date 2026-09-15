@@ -14,7 +14,7 @@
 static unsigned color_calls;
 static unsigned fail_color_call;
 static unsigned elapsed_ms;
-static uint8_t colors[8][3];
+static uint8_t colors[64][3];
 static esp_err_t rainbow_result;
 static unsigned oled_calls;
 static unsigned fail_oled_call;
@@ -24,6 +24,29 @@ static esp_err_t speaker_result;
 static FILE *preview_output;
 static bool record_preview;
 static unsigned preview_actions;
+
+static void begin_preview(const char *id, unsigned duration, const char *kind)
+{
+    const tokki_action_descriptor_t *action = tokki_action_find(id);
+    assert(action != NULL);
+    assert(strpbrk(action->display_name, "\"\\\n\r\t") == NULL);
+    fprintf(preview_output, "%s\"%s\":{\"name\":\"%s\",\"duration\":%u,\"kind\":\"%s\"",
+            preview_actions++ == 0 ? "" : ",\n", id, action->display_name, duration, kind);
+}
+
+static void export_colors(const char *id, unsigned frame_ms)
+{
+    if (preview_output == NULL) {
+        return;
+    }
+    begin_preview(id, elapsed_ms, "color");
+    fprintf(preview_output, ",\"frameMs\":%u,\"colors\":[", frame_ms);
+    for (unsigned index = 0; index < color_calls; ++index) {
+        fprintf(preview_output, "%s[%u,%u,%u]", index == 0 ? "" : ",",
+                colors[index][0], colors[index][1], colors[index][2]);
+    }
+    fputs("]}", preview_output);
+}
 
 esp_err_t tokki_speaker_play(tokki_speaker_sound_t sound)
 {
@@ -58,7 +81,7 @@ void vTaskDelay(TickType_t ticks)
 
 esp_err_t tokki_neopixel_set_color(uint8_t red, uint8_t green, uint8_t blue)
 {
-    assert(color_calls < 8);
+    assert(color_calls < 64);
     colors[color_calls][0] = red;
     colors[color_calls][1] = green;
     colors[color_calls][2] = blue;
@@ -99,6 +122,7 @@ static void test_blink(const char *id, uint8_t red, uint8_t green)
         assert(colors[index][1] == (index % 2 == 0 ? green : 0));
         assert(colors[index][2] == 0);
     }
+    export_colors(id, 200);
     for (unsigned failure = 1; failure <= 6; ++failure) {
         reset_output();
         fail_color_call = failure;
@@ -108,12 +132,34 @@ static void test_blink(const char *id, uint8_t red, uint8_t green)
     }
 }
 
+static void test_fade(const char *id, unsigned half_steps, bool teal)
+{
+    unsigned count = half_steps * 2 + 1;
+    reset_output();
+    assert(tokki_action_run(id) == ESP_OK);
+    assert(color_calls == count && elapsed_ms == count * 40);
+    for (unsigned index = 0; index < count; ++index) {
+        unsigned distance = index <= half_steps ? index : half_steps * 2 - index;
+        unsigned brightness = 32 * distance / half_steps;
+        assert(colors[index][0] == 0);
+        assert(colors[index][1] == (teal ? brightness : 0));
+        assert(colors[index][2] == brightness);
+    }
+    export_colors(id, 40);
+    for (unsigned failure = 1; failure <= count; ++failure) {
+        reset_output();
+        fail_color_call = failure;
+        assert(tokki_action_run(id) == ESP_FAIL);
+        assert(color_calls == failure && elapsed_ms == (failure - 1) * 40);
+    }
+}
+
 static void test_oled(const char *id, unsigned frames, unsigned duration)
 {
     reset_output();
     if (preview_output != NULL) {
-        fprintf(preview_output, "%s\"%s\":{\"duration\":%u,\"frames\":[",
-                preview_actions++ == 0 ? "" : ",\n", id, duration);
+        begin_preview(id, duration, "oled");
+        fputs(",\"frames\":[", preview_output);
         record_preview = true;
     }
     assert(tokki_action_run(id) == ESP_OK);
@@ -136,12 +182,12 @@ static void test_renderers(void)
     uint8_t guarded[TOKKI_OLED_FRAME_SIZE + 2];
     memset(guarded, 0xA5, sizeof(guarded));
     for (unsigned frame = 0; frame < 48; ++frame) {
-        for (int expression = PET_EYES_HAPPY; expression <= PET_EYES_SURPRISED; ++expression) {
+        for (int expression = PET_EYES_HAPPY; expression <= PET_EYES_SLEEPY; ++expression) {
             pet_eyes_render(guarded + 1, TOKKI_OLED_FRAME_SIZE, 128, 64,
                              (pet_eye_expression_t) expression, frame);
             assert(guarded[0] == 0xA5 && guarded[sizeof(guarded) - 1] == 0xA5);
         }
-        for (int art = TOKKI_OLED_ART_DRINK_WATER; art <= TOKKI_OLED_ART_FIRE; ++art) {
+        for (int art = TOKKI_OLED_ART_DRINK_WATER; art <= TOKKI_OLED_ART_EXCLAMATION; ++art) {
             assert(tokki_oled_render_art(guarded + 1, TOKKI_OLED_FRAME_SIZE,
                                           (tokki_oled_art_t) art, frame) == ESP_OK);
             assert(guarded[0] == 0xA5 && guarded[sizeof(guarded) - 1] == 0xA5);
@@ -158,17 +204,149 @@ static void test_renderers(void)
     assert(tokki_action_run("oled.blink") == ESP_OK);
     pet_eyes_render(happy, sizeof(happy), 128, 64, PET_EYES_HAPPY, 42);
     assert(memcmp(happy, last_frame, sizeof(happy)) == 0);
+    uint8_t open_wink[TOKKI_OLED_FRAME_SIZE];
+    uint8_t closed_wink[TOKKI_OLED_FRAME_SIZE];
+    pet_eyes_render(open_wink, sizeof(open_wink), 128, 64, PET_EYES_WINK, 34);
+    pet_eyes_render(closed_wink, sizeof(closed_wink), 128, 64, PET_EYES_WINK, 38);
+    unsigned left_lit = 0;
+    unsigned right_lit = 0;
+    for (unsigned row = 22; row < 48; ++row) {
+        for (unsigned column = 20; column < 60; ++column) {
+            left_lit += (closed_wink[(row / 8) * 128 + column] >> (row % 8)) & 1U;
+            right_lit += (closed_wink[(row / 8) * 128 + column + 48] >> (row % 8)) & 1U;
+        }
+    }
+    assert(left_lit > right_lit * 2 && right_lit > 0);
+    assert(memcmp(open_wink, closed_wink, sizeof(open_wink)) != 0);
+    reset_output();
+    assert(tokki_action_run("oled.wink") == ESP_OK);
+    pet_eyes_render(happy, sizeof(happy), 128, 64, PET_EYES_HAPPY, 0);
+    assert(memcmp(happy, last_frame, sizeof(happy)) == 0);
+}
+
+static void test_glances(void)
+{
+    const char *ids[] = {"oled.look_left", "oled.look_right", "oled.look_up", "oled.look_down", "oled.sleepy"};
+    uint8_t happy[TOKKI_OLED_FRAME_SIZE];
+    uint8_t frames[5][TOKKI_OLED_FRAME_SIZE];
+    pet_eyes_render(happy, sizeof(happy), 128, 64, PET_EYES_HAPPY, 0);
+    for (size_t index = 0; index < 5; ++index) {
+        reset_output();
+        assert(tokki_action_run(ids[index]) == ESP_OK);
+        assert(memcmp(happy, last_frame, sizeof(happy)) == 0);
+        pet_eyes_render(frames[index], sizeof(frames[index]), 128, 64,
+                         (pet_eye_expression_t) (PET_EYES_LOOK_LEFT + index), 8);
+        assert(memcmp(happy, frames[index], sizeof(happy)) != 0);
+        for (size_t other = 0; other < index; ++other) {
+            assert(memcmp(frames[index], frames[other], sizeof(happy)) != 0);
+        }
+    }
+    assert((frames[0][(30 / 8) * 128 + 30] & (1U << (30 % 8))) == 0);
+    assert((frames[1][(30 / 8) * 128 + 30] & (1U << (30 % 8))) != 0);
+    assert((frames[1][(30 / 8) * 128 + 50] & (1U << (30 % 8))) == 0);
+    assert((frames[0][(30 / 8) * 128 + 50] & (1U << (30 % 8))) != 0);
+}
+
+static void test_restoring_art(void)
+{
+    uint8_t happy[TOKKI_OLED_FRAME_SIZE];
+    uint8_t first[TOKKI_OLED_FRAME_SIZE];
+    uint8_t later[TOKKI_OLED_FRAME_SIZE];
+    pet_eyes_render(happy, sizeof(happy), 128, 64, PET_EYES_HAPPY, 0);
+    const char *ids[] = {"oled.checkmark", "oled.thinking", "oled.heart", "oled.exclamation"};
+    for (size_t index = 0; index < sizeof(ids) / sizeof(ids[0]); ++index) {
+        reset_output();
+        assert(tokki_action_run(ids[index]) == ESP_OK);
+        assert(memcmp(happy, last_frame, sizeof(happy)) == 0);
+        tokki_oled_art_t art = (tokki_oled_art_t) (TOKKI_OLED_ART_CHECKMARK + index);
+        assert(tokki_oled_render_art(first, sizeof(first), art, 0) == ESP_OK);
+        assert(tokki_oled_render_art(later, sizeof(later), art, 8) == ESP_OK);
+        assert(memcmp(first, later, sizeof(first)) != 0);
+    }
+    assert(tokki_oled_render_art(first, sizeof(first), TOKKI_OLED_ART_THINKING, 12) == ESP_OK);
+    assert(tokki_oled_render_art(later, sizeof(later), TOKKI_OLED_ART_THINKING, 18) == ESP_OK);
+    assert(memcmp(first, later, sizeof(first)) == 0);
+}
+
+static void export_tone(const char *id, tokki_speaker_sound_t sound)
+{
+    if (preview_output == NULL) {
+        return;
+    }
+    size_t count = 0;
+    const speaker_tone_step_t *steps = speaker_sound_steps(sound, &count);
+    unsigned duration = 500;
+    for (size_t index = 0; index < count; ++index) {
+        duration += steps[index].duration_ms + steps[index].silence_ms;
+    }
+    begin_preview(id, duration, "tone");
+    fprintf(preview_output, ",\"sampleRate\":%u,\"pcm\":\"", SPEAKER_SAMPLE_RATE_HZ);
+    for (unsigned sample = 0; sample < SPEAKER_SAMPLE_RATE_HZ / 4; ++sample) {
+        fputs("0000", preview_output);
+    }
+    for (size_t index = 0; index < count; ++index) {
+        uint32_t phase = 0;
+        unsigned frames = SPEAKER_SAMPLE_RATE_HZ * steps[index].duration_ms / 1000;
+        for (unsigned frame = 0; frame < frames; ++frame) {
+            unsigned frequency = steps[index].start_hz +
+                (steps[index].end_hz - steps[index].start_hz) * frame / frames;
+            int16_t sample = speaker_tone_sample(frame, frames, phase);
+            assert(sample >= -6553 && sample <= 6553);
+            fprintf(preview_output, "%02x%02x", (unsigned) ((uint16_t) sample & 255),
+                    (unsigned) ((uint16_t) sample >> 8));
+            phase += (uint32_t) (((uint64_t) frequency << 32) / SPEAKER_SAMPLE_RATE_HZ);
+        }
+        for (unsigned frame = 0; frame < SPEAKER_SAMPLE_RATE_HZ * steps[index].silence_ms / 1000; ++frame) {
+            fputs("0000", preview_output);
+        }
+    }
+    for (unsigned sample = 0; sample < SPEAKER_SAMPLE_RATE_HZ / 4; ++sample) {
+        fputs("0000", preview_output);
+    }
+    fputs("\"}", preview_output);
 }
 
 static void test_speaker(void)
 {
-    const char *ids[] = {"speaker.drink_water", "speaker.chirp", "speaker.alert"};
+    const char *ids[] = {"speaker.drink_water", "speaker.chirp", "speaker.alert", "speaker.chime", "speaker.ping"};
     for (size_t index = 0; index < sizeof(ids) / sizeof(ids[0]); ++index) {
         speaker_result = ESP_OK;
         assert(tokki_action_run(ids[index]) == ESP_OK);
         assert(last_sound == (tokki_speaker_sound_t) index);
+        if (index > 0) {
+            export_tone(ids[index], (tokki_speaker_sound_t) index);
+        }
         speaker_result = ESP_FAIL;
         assert(tokki_action_run(ids[index]) == ESP_FAIL);
+    }
+    size_t step_count = 99;
+    assert(speaker_sound_steps(TOKKI_SPEAKER_CHIME, NULL) == NULL);
+    assert(speaker_sound_steps((tokki_speaker_sound_t) 99, &step_count) == NULL && step_count == 0);
+    const unsigned expected_duration[] = {0, 320, 180, 460, 100};
+    for (int sound = TOKKI_SPEAKER_CHIRP; sound <= TOKKI_SPEAKER_PING; ++sound) {
+        const speaker_tone_step_t *steps = speaker_sound_steps((tokki_speaker_sound_t) sound, &step_count);
+        assert(steps != NULL && step_count > 0 && step_count <= 2);
+        unsigned duration = 0;
+        for (size_t index = 0; index < step_count; ++index) {
+            assert(steps[index].start_hz > 0 && steps[index].end_hz < SPEAKER_SAMPLE_RATE_HZ / 2);
+            assert(steps[index].end_hz >= steps[index].start_hz);
+            duration += steps[index].duration_ms + steps[index].silence_ms;
+            unsigned frames = SPEAKER_SAMPLE_RATE_HZ * steps[index].duration_ms / 1000;
+            for (unsigned frame = 0; frame < frames; ++frame) {
+                for (uint32_t phase_index = 0; phase_index < 32; ++phase_index) {
+                    int16_t sample = speaker_tone_sample(frame, frames, phase_index << 27);
+                    assert(sample >= -6553 && sample <= 6553);
+                    if (frame == 0 || frame == frames - 1) {
+                        assert(sample == 0);
+                    }
+                }
+            }
+        }
+        assert(duration == expected_duration[sound]);
+        if (sound == TOKKI_SPEAKER_CHIME) {
+            assert(step_count == 2 && steps[1].start_hz > steps[0].start_hz);
+            assert(steps[0].duration_ms + steps[1].duration_ms == 400);
+        }
     }
     for (unsigned frame = 0; frame < 4800; ++frame) {
         for (uint32_t phase_index = 0; phase_index < 32; ++phase_index) {
@@ -193,7 +371,7 @@ int main(int argc, char **argv)
         assert(fopen_s(&preview_output, argv[1], "w") == 0);
         fputs("window.TOKKI_PREVIEW = {\n", preview_output);
     }
-    assert(tokki_action_count() == 16);
+    assert(tokki_action_count() == 30);
     assert(tokki_action_at(tokki_action_count()) == NULL);
     assert(tokki_action_find(NULL) == NULL);
     assert(tokki_action_run("missing") == ESP_ERR_NOT_FOUND);
@@ -214,6 +392,8 @@ int main(int argc, char **argv)
     test_blink("neopixel.blink_red", 32, 0);
     test_blink("neopixel.blink_yellow", 32, 32);
     test_blink("neopixel.blink_green", 0, 32);
+    test_fade("neopixel.breathe_teal", 16, true);
+    test_fade("neopixel.pulse_blue", 8, false);
     reset_output();
     assert(tokki_action_run("neopixel.rainbow") == ESP_OK);
     assert(color_calls == 1 && colors[0][0] == 0 && colors[0][1] == 0 && colors[0][2] == 0);
@@ -232,12 +412,31 @@ int main(int argc, char **argv)
     test_oled("oled.drink_water", 1, 2000);
     test_oled("oled.water_drop", 24, 1440);
     test_oled("oled.fire", 24, 1440);
+    test_oled("oled.wink", 10, 600);
+    test_oled("oled.checkmark", 17, 1020);
+    test_oled("oled.thinking", 20, 1200);
+    test_oled("oled.look_left", 24, 1440);
+    test_oled("oled.look_right", 24, 1440);
+    test_oled("oled.look_up", 24, 1440);
+    test_oled("oled.look_down", 24, 1440);
+    test_oled("oled.sleepy", 24, 1440);
+    test_oled("oled.heart", 24, 1440);
+    test_oled("oled.exclamation", 17, 1020);
     test_renderers();
+    test_glances();
+    test_restoring_art();
     test_speaker();
     if (preview_output != NULL) {
+        begin_preview("led.blink", 1200, "status");
+        fputc('}', preview_output);
+        begin_preview("neopixel.rainbow", 2560, "rainbow");
+        fputc('}', preview_output);
+        begin_preview("speaker.drink_water", 2230, "speech");
+        fputc('}', preview_output);
+        assert(preview_actions == tokki_action_count());
         fputs("\n};\n", preview_output);
         assert(fclose(preview_output) == 0);
     }
-    puts("PASS: 16 actions, RGB timing/colors, OLED frames/bounds/timing, speaker routing/envelope/ceiling, driver failures");
+    printf("PASS: %zu actions, RGB timing/colors, OLED frames/bounds/timing, speaker routing/envelope/ceiling, driver failures\n", tokki_action_count());
     return 0;
 }

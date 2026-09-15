@@ -6,3 +6,5 @@ extern const tokki_action_descriptor_t TOKKI_NEOPIXEL_RAINBOW_ACTION;
 extern const tokki_action_descriptor_t TOKKI_NEOPIXEL_BLINK_RED_ACTION;
 extern const tokki_action_descriptor_t TOKKI_NEOPIXEL_BLINK_YELLOW_ACTION;
 extern const tokki_action_descriptor_t TOKKI_NEOPIXEL_BLINK_GREEN_ACTION;
+extern const tokki_action_descriptor_t TOKKI_NEOPIXEL_BREATHE_TEAL_ACTION;
+extern const tokki_action_descriptor_t TOKKI_NEOPIXEL_PULSE_BLUE_ACTION;

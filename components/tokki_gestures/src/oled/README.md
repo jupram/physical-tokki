@@ -9,6 +9,13 @@ blink runs only the nine-frame close/reopen section. Drink water is a centered
 two-line message. Water drop and fire each run for 24 frames. Every action
 retains its final frame and returns display errors immediately.
 
+The follow-up primitives are wink, checkmark, thinking dots, four directional
+glances, sleepy eyes, heart and exclamation. These transient actions restore
+the centered happy-eye frame before returning. Wink keeps the other eye open;
+thinking dots advance once without an endless loop. No expression implies
+sensor tracking, listening, or real task progress. See the parent catalog for
+exact nominal durations and successful final states.
+
 The OLED initializes lazily and remains owned by this driver. Do not run these
 actions concurrently or alongside the separate self-test's OLED task. No
 desktop event names, action bundles or endless loops belong here.

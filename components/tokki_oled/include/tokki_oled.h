@@ -13,6 +13,10 @@ typedef enum {
     TOKKI_OLED_ART_DRINK_WATER,
     TOKKI_OLED_ART_WATER_DROP,
     TOKKI_OLED_ART_FIRE,
+    TOKKI_OLED_ART_CHECKMARK,
+    TOKKI_OLED_ART_THINKING,
+    TOKKI_OLED_ART_HEART,
+    TOKKI_OLED_ART_EXCLAMATION,
 } tokki_oled_art_t;
 
 esp_err_t tokki_oled_draw_frame(const uint8_t *framebuffer, size_t size);

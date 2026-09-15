@@ -26,6 +26,8 @@ assignments in `tokki_board`.
 | `neopixel.blink_red` | 1.2 s | Three red RGB blinks, then off |
 | `neopixel.blink_yellow` | 1.2 s | Three yellow RGB blinks, then off |
 | `neopixel.blink_green` | 1.2 s | Three green RGB blinks, then off |
+| `neopixel.breathe_teal` | 1.32 s | One slow teal fade in/out, then off |
+| `neopixel.pulse_blue` | 0.68 s | One quick blue fade in/out, then off |
 | `oled.happy` | 2.88 s | 48 frames of happy eyes; retains last frame |
 | `oled.sad` | 2.88 s | 48 frames of sad eyes with tears; retains last frame |
 | `oled.surprised` | 2.88 s | 48 frames of wide eyes with small pupils; retains last frame |
@@ -34,12 +36,28 @@ assignments in `tokki_board`.
 | `oled.drink_water` | 2 s | Fixed two-line message; remains visible after return |
 | `oled.water_drop` | 1.44 s | 24 gently moving drop frames; retains last frame |
 | `oled.fire` | 1.44 s | 24 monochrome flame frames; retains last frame |
+| `oled.wink` | 0.60 s | One eye closes/reopens; restores centered happy eyes |
+| `oled.checkmark` | 1.02 s | Draws a check, holds, then restores happy eyes |
+| `oled.thinking` | 1.20 s | Three dots advance once, then restores happy eyes |
+| `oled.look_left` | 1.44 s | Brief leftward glance, then centered happy eyes |
+| `oled.look_right` | 1.44 s | Brief rightward glance, then centered happy eyes |
+| `oled.look_up` | 1.44 s | Brief upward glance, then centered happy eyes |
+| `oled.look_down` | 1.44 s | Brief downward glance, then centered happy eyes |
+| `oled.sleepy` | 1.44 s | Lids lower/reopen, then restores happy eyes |
+| `oled.heart` | 1.44 s | Small heart pulse, then restores happy eyes |
+| `oled.exclamation` | 1.02 s | Exclamation mark grows into view, then restores happy eyes |
 | `speaker.drink_water` | About 2.23 s | 1.73 s offline-generated phrase plus silence |
 | `speaker.chirp` | About 0.82 s | Two rising bird-like synthesized chirps plus silence |
 | `speaker.alert` | About 0.68 s | Short 660 Hz alert plus silence |
+| `speaker.chime` | About 0.96 s | Two rising notes (400 ms audible), 60 ms gap, 500 ms silence |
+| `speaker.ping` | About 0.60 s | One 100 ms, 1320 Hz ping plus 500 ms silence |
 
-There are 16 actions, of which 14 are new. Curious eyes reuse an existing
-renderer; the neutral alert is a small extra. No event bundles are registered.
+There are 30 actions (18 OLED, 6 NeoPixel, 1 status LED, 5 speaker), of which 28
+are new relative to the initial scaffold. The follow-up batch adds 14 to the
+first 16-action catalog. No event bundles are registered. Glances are expressions,
+not sensor tracking. Thinking dots are a finite cue, not actual progress or a
+listening indicator. Only a future PC rule should decide whether work is pending
+or completed. Checkmark and chime remain independent actions.
 The red-only status LED cannot make yellow or green; use the NeoPixel IDs.
 
 ## Execution contract
@@ -65,8 +83,10 @@ wattage: check gain strapping, supply, impedance, distortion and heat on hardwar
 
 Actions stop on the first driver failure and return it. Final-state guarantees
 apply only on success; failed LED writes cannot guarantee that the LED is off.
-OLED art stays visible until another frame is drawn. No action starts an idle
-loop or background animation task.
+The first eight OLED actions retain their final frame; new transient OLED
+actions explicitly restore centered happy eyes. No action starts an idle loop
+or background animation task. RGB fades and blinks are capped at 32/255 per
+channel, matching the existing rainbow brightness limit.
 
 ## Scope and verification
 
@@ -86,14 +106,20 @@ On Windows with Visual Studio C++ tools:
 
 Host checks compile the actual registry, action wrappers, eye/art renderers and
 tone generator with warnings as errors. They verify unique IDs, timing, output
-bounds, driver-failure propagation, tone envelopes and the speech WAV format.
+bounds, driver-failure propagation, restored-eye frames, one-eye wink closure,
+directional glances, RGB fades, fixed tone sequences, envelopes and WAV format.
 I/O is mocked: these tests do not compile or validate the ESP-IDF I2C/I2S drivers.
 
-Optional export of actual C-rendered frames for an external preview:
+Optional export of all 30 catalog entries for an external preview:
 
 ```powershell
 ./tests/host/run.ps1 -PreviewPath ../gesture-preview.js
 ```
+
+The export captures actual OLED frames, new RGB writes and limited PCM tone
+samples. The existing delegated status blink/rainbow actions export metadata
+only and are labeled illustrative in the external guide. No guide or generated
+preview asset is shipped inside this repository.
 
 Before hardware approval, build both applications in an exported ESP-IDF shell:
 
