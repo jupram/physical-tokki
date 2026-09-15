@@ -6,8 +6,6 @@
 
 #include "driver/gpio.h"
 #include "driver/i2c_master.h"
-#include "driver/rmt_encoder.h"
-#include "driver/rmt_tx.h"
 #include "esp_chip_info.h"
 #include "esp_err.h"
 #include "esp_flash.h"
@@ -22,6 +20,9 @@
 #include "freertos/task.h"
 #include "pet_eyes.h"
 #include "speaker_test.h"
+#include "tokki_board.h"
+#include "tokki_led.h"
+#include "tokki_neopixel.h"
 
 #if CONFIG_FEATHER_TEST_ENABLE_WIFI_SCAN
 #include "esp_event.h"
@@ -30,16 +31,6 @@
 #include "nvs_flash.h"
 #endif
 
-#define FEATHER_LED_GPIO GPIO_NUM_13
-#define FEATHER_NEOPIXEL_GPIO GPIO_NUM_0
-#define FEATHER_PERIPHERAL_POWER_GPIO GPIO_NUM_2
-#define FEATHER_I2C_SDA_GPIO GPIO_NUM_22
-#define FEATHER_I2C_SCL_GPIO GPIO_NUM_20
-
-#define NEOPIXEL_RMT_RESOLUTION_HZ 10000000
-#define NEOPIXEL_RAINBOW_BRIGHTNESS 32
-#define NEOPIXEL_RAINBOW_STEPS 128
-#define NEOPIXEL_RAINBOW_FRAME_MS 20
 #define WIFI_SCAN_RESULT_LIMIT 12
 #define SSD1306_I2C_ADDRESS 0x3C
 #define SSD1306_WIDTH 128
@@ -55,8 +46,6 @@
 
 static const char *TAG = "feather_test";
 
-static rmt_channel_handle_t s_neopixel_channel;
-static rmt_encoder_handle_t s_neopixel_encoder;
 static esp_lcd_panel_handle_t s_oled_panel;
 static uint8_t s_oled_framebuffer[SSD1306_BUFFER_SIZE];
 
@@ -84,175 +73,12 @@ static const oled_glyph_t OLED_FONT[] = {
     {'y', {0x0C, 0x50, 0x50, 0x50, 0x3C}},
 };
 
-static esp_err_t configure_board_gpio(void)
-{
-    gpio_config_t output_config = {
-        .pin_bit_mask = (1ULL << FEATHER_LED_GPIO) |
-                        (1ULL << FEATHER_PERIPHERAL_POWER_GPIO),
-        .mode = GPIO_MODE_OUTPUT,
-        .pull_up_en = GPIO_PULLUP_DISABLE,
-        .pull_down_en = GPIO_PULLDOWN_DISABLE,
-        .intr_type = GPIO_INTR_DISABLE,
-    };
-
-    esp_err_t err = gpio_config(&output_config);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    err = gpio_set_level(FEATHER_LED_GPIO, 0);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    return gpio_set_level(FEATHER_PERIPHERAL_POWER_GPIO, 1);
-}
-
-static esp_err_t initialize_neopixel(void)
-{
-    rmt_tx_channel_config_t channel_config = {
-        .clk_src = RMT_CLK_SRC_DEFAULT,
-        .gpio_num = FEATHER_NEOPIXEL_GPIO,
-        .mem_block_symbols = 64,
-        .resolution_hz = NEOPIXEL_RMT_RESOLUTION_HZ,
-        .trans_queue_depth = 1,
-    };
-
-    esp_err_t err = rmt_new_tx_channel(&channel_config, &s_neopixel_channel);
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    rmt_copy_encoder_config_t encoder_config = {};
-    err = rmt_new_copy_encoder(&encoder_config, &s_neopixel_encoder);
-    if (err != ESP_OK) {
-        rmt_del_channel(s_neopixel_channel);
-        s_neopixel_channel = NULL;
-        return err;
-    }
-
-    err = rmt_enable(s_neopixel_channel);
-    if (err != ESP_OK) {
-        rmt_del_encoder(s_neopixel_encoder);
-        rmt_del_channel(s_neopixel_channel);
-        s_neopixel_encoder = NULL;
-        s_neopixel_channel = NULL;
-    }
-    return err;
-}
-
-static esp_err_t set_neopixel(uint8_t red, uint8_t green, uint8_t blue)
-{
-    if (s_neopixel_channel == NULL || s_neopixel_encoder == NULL) {
-        return ESP_ERR_INVALID_STATE;
-    }
-
-    const uint8_t grb[] = {green, red, blue};
-    rmt_symbol_word_t symbols[25] = {};
-    size_t symbol_index = 0;
-
-    for (size_t byte_index = 0; byte_index < sizeof(grb); ++byte_index) {
-        for (int bit_index = 7; bit_index >= 0; --bit_index) {
-            bool one = (grb[byte_index] & (1U << bit_index)) != 0;
-            symbols[symbol_index++] = (rmt_symbol_word_t) {
-                .level0 = 1,
-                .duration0 = one ? 9 : 3,
-                .level1 = 0,
-                .duration1 = one ? 3 : 9,
-            };
-        }
-    }
-
-    symbols[symbol_index] = (rmt_symbol_word_t) {
-        .level0 = 0,
-        .duration0 = 250,
-        .level1 = 0,
-        .duration1 = 250,
-    };
-
-    rmt_transmit_config_t transmit_config = {
-        .loop_count = 0,
-    };
-    esp_err_t err = rmt_transmit(
-        s_neopixel_channel,
-        s_neopixel_encoder,
-        symbols,
-        sizeof(symbols),
-        &transmit_config
-    );
-    if (err != ESP_OK) {
-        return err;
-    }
-
-    return rmt_tx_wait_all_done(s_neopixel_channel, pdMS_TO_TICKS(100));
-}
-
-static void neopixel_rainbow_color(uint8_t position,
-                                   uint8_t *red,
-                                   uint8_t *green,
-                                   uint8_t *blue)
-{
-    uint16_t raw_red;
-    uint16_t raw_green;
-    uint16_t raw_blue;
-
-    if (position < 85) {
-        raw_red = 255 - position * 3;
-        raw_green = position * 3;
-        raw_blue = 0;
-    } else if (position < 170) {
-        position -= 85;
-        raw_red = 0;
-        raw_green = 255 - position * 3;
-        raw_blue = position * 3;
-    } else {
-        position -= 170;
-        raw_red = position * 3;
-        raw_green = 0;
-        raw_blue = 255 - position * 3;
-    }
-
-    *red = raw_red * NEOPIXEL_RAINBOW_BRIGHTNESS / 255;
-    *green = raw_green * NEOPIXEL_RAINBOW_BRIGHTNESS / 255;
-    *blue = raw_blue * NEOPIXEL_RAINBOW_BRIGHTNESS / 255;
-}
-
-static esp_err_t run_neopixel_rainbow(void)
-{
-    ESP_LOGI(TAG, "NeoPixel should smoothly cycle through the rainbow five times");
-    for (int cycle = 0; cycle < 5; ++cycle) {
-        for (int step = 0; step < NEOPIXEL_RAINBOW_STEPS; ++step) {
-            uint8_t red;
-            uint8_t green;
-            uint8_t blue;
-            uint8_t position = step * 256 / NEOPIXEL_RAINBOW_STEPS;
-            neopixel_rainbow_color(position, &red, &green, &blue);
-
-            esp_err_t err = set_neopixel(red, green, blue);
-            if (err != ESP_OK) {
-                return err;
-            }
-            vTaskDelay(pdMS_TO_TICKS(NEOPIXEL_RAINBOW_FRAME_MS));
-        }
-    }
-    return ESP_OK;
-}
-
 static esp_err_t run_visual_test(void)
 {
     ESP_LOGI(TAG, "Red status LED should blink three times");
-    for (int i = 0; i < 3; ++i) {
-        esp_err_t err = gpio_set_level(FEATHER_LED_GPIO, 1);
-        if (err != ESP_OK) {
-            return err;
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
-
-        err = gpio_set_level(FEATHER_LED_GPIO, 0);
-        if (err != ESP_OK) {
-            return err;
-        }
-        vTaskDelay(pdMS_TO_TICKS(200));
+    esp_err_t err = tokki_led_blink(3, 200, 200);
+    if (err != ESP_OK) {
+        return err;
     }
 
     const uint8_t colors[][3] = {
@@ -263,7 +89,7 @@ static esp_err_t run_visual_test(void)
     ESP_LOGI(TAG, "NeoPixel should cycle red, green, and blue five times");
     for (int cycle = 0; cycle < 5; ++cycle) {
         for (size_t i = 0; i < sizeof(colors) / sizeof(colors[0]); ++i) {
-            esp_err_t err = set_neopixel(colors[i][0], colors[i][1], colors[i][2]);
+            err = tokki_neopixel_set_color(colors[i][0], colors[i][1], colors[i][2]);
             if (err != ESP_OK) {
                 return err;
             }
@@ -271,12 +97,13 @@ static esp_err_t run_visual_test(void)
         }
     }
 
-    esp_err_t rainbow_result = run_neopixel_rainbow();
+    ESP_LOGI(TAG, "NeoPixel should smoothly cycle through the rainbow five times");
+    esp_err_t rainbow_result = tokki_neopixel_rainbow(5);
     if (rainbow_result != ESP_OK) {
         return rainbow_result;
     }
 
-    return set_neopixel(0, 0, 0);
+    return tokki_neopixel_set_color(0, 0, 0);
 }
 
 #if CONFIG_FEATHER_TEST_ENABLE_WIFI_SCAN
@@ -371,8 +198,8 @@ static esp_err_t initialize_i2c_bus(i2c_master_bus_handle_t *bus)
     i2c_master_bus_config_t bus_config = {
         .clk_source = I2C_CLK_SRC_DEFAULT,
         .i2c_port = -1,
-        .scl_io_num = FEATHER_I2C_SCL_GPIO,
-        .sda_io_num = FEATHER_I2C_SDA_GPIO,
+        .scl_io_num = TOKKI_BOARD_I2C_SCL_GPIO,
+        .sda_io_num = TOKKI_BOARD_I2C_SDA_GPIO,
         .glitch_ignore_cnt = 7,
         .flags.enable_internal_pullup = true,
     };
@@ -706,10 +533,12 @@ void app_main(void)
     print_system_information();
 
     bool all_passed = true;
-    all_passed &= report_test_result("Board GPIO and peripheral power",
-                                     configure_board_gpio());
+    all_passed &= report_test_result("Peripheral power",
+                                     tokki_board_init());
+    all_passed &= report_test_result("Red status LED initialization",
+                                     tokki_led_init());
 
-    esp_err_t neopixel_init_result = initialize_neopixel();
+    esp_err_t neopixel_init_result = tokki_neopixel_init();
     all_passed &= report_test_result("NeoPixel RMT initialization",
                                      neopixel_init_result);
     if (neopixel_init_result == ESP_OK) {
@@ -755,20 +584,20 @@ void app_main(void)
 
     if (all_passed) {
         ESP_LOGI(TAG, "SELF-TEST PASSED");
-        if (set_neopixel(0, 16, 0) != ESP_OK) {
+        if (tokki_neopixel_set_color(0, 16, 0) != ESP_OK) {
             ESP_LOGW(TAG, "Could not set final green NeoPixel status");
         }
     } else {
         ESP_LOGE(TAG, "SELF-TEST FAILED; review the failures above");
-        if (set_neopixel(16, 0, 0) != ESP_OK) {
+        if (tokki_neopixel_set_color(16, 0, 0) != ESP_OK) {
             ESP_LOGW(TAG, "Could not set final red NeoPixel status");
         }
     }
 
     while (true) {
-        gpio_set_level(FEATHER_LED_GPIO, 1);
+        tokki_led_set(true);
         vTaskDelay(pdMS_TO_TICKS(100));
-        gpio_set_level(FEATHER_LED_GPIO, 0);
+        tokki_led_set(false);
         vTaskDelay(pdMS_TO_TICKS(1900));
     }
 }

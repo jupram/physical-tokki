@@ -1,7 +1,44 @@
-# Adafruit ESP32 Feather V2 Self-Test
+# Physical Tokki
 
-This ESP-IDF project performs a safe hardware smoke test for the Adafruit
-ESP32 Feather V2:
+Physical Tokki is an ESP32-based desktop pet with OLED eye expressions,
+speaker notifications, a status LED, and NeoPixel effects. The repository is
+being organized so contributors can add gestures independently of the board
+diagnostics and desktop integrations.
+
+## Repository layout
+
+```text
+components/tokki_board/       Feather V2 pins and peripheral power
+components/tokki_led/         Onboard red LED driver
+components/tokki_neopixel/    RGB color and rainbow effects
+components/tokki_oled/        OLED eye renderer
+components/tokki_speaker/     I2S speaker code and embedded audio
+components/tokki_gestures/    Discoverable actions grouped by device
+main/                         Production firmware
+self_test/                    Standalone hardware self-test firmware
+protocol/                     PC-to-pet serial protocol
+docs/                         Architecture documentation
+```
+
+See [the architecture](docs/architecture.md), [gesture contribution guide](components/tokki_gestures/README.md), and [serial protocol](protocol/tokki-serial-v1.md).
+
+## Production firmware
+
+The root ESP-IDF application initializes the shared board, LED, and NeoPixel
+components and reports the registered action catalog. USB serial command
+handling is the next implementation step.
+
+From an exported ESP-IDF shell:
+
+```powershell
+idf.py build
+idf.py flash monitor
+```
+
+## Hardware self-test
+
+The independent `self_test/` application performs a safe hardware smoke test
+for the Adafruit ESP32 Feather V2:
 
 - Prints chip, flash, heap, and Wi-Fi MAC information.
 - Blinks the red LED on GPIO13 three times.
@@ -68,12 +105,12 @@ Connect the SSD1306 OLED to the Feather V2 STEMMA QT connector, or wire:
 
 The display must be configured for I2C address `0x3C`.
 
-## Run
+## Run the self-test
 
 1. Connect the Feather V2 over USB-C.
-2. In VS Code, run `ESP-IDF: Select Port to Use`.
-3. Run `ESP-IDF: Set Espressif Device Target` and select `esp32`.
-4. Run `ESP-IDF: Build, Flash and Start a Monitor`.
+2. Open an exported ESP-IDF shell at the repository root.
+3. Build with `idf.py -C self_test -B build build`.
+4. Flash and monitor with `idf.py -C self_test -B build flash monitor`.
 
 The serial monitor reports `[PASS]` or `[FAIL]` for each stage. A successful
 test leaves the NeoPixel green and flashes the red LED briefly every two

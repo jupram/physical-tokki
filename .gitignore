@@ -1,7 +1,10 @@
 # ESP-IDF generated output and local configuration
 /build/
+/self_test/build/
 /sdkconfig
 /sdkconfig.old
+/self_test/sdkconfig
+/self_test/sdkconfig.old
 /.espressif/
 
 # Machine-specific VS Code paths and serial-port settings

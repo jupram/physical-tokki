@@ -1,0 +1,60 @@
+#include "tokki_led.h"
+
+#include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "tokki_board.h"
+
+static bool s_initialized;
+
+esp_err_t tokki_led_init(void)
+{
+    gpio_config_t config = {
+        .pin_bit_mask = 1ULL << TOKKI_BOARD_STATUS_LED_GPIO,
+        .mode = GPIO_MODE_OUTPUT,
+        .pull_up_en = GPIO_PULLUP_DISABLE,
+        .pull_down_en = GPIO_PULLDOWN_DISABLE,
+        .intr_type = GPIO_INTR_DISABLE,
+    };
+
+    esp_err_t err = gpio_config(&config);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = gpio_set_level(TOKKI_BOARD_STATUS_LED_GPIO, 0);
+    if (err == ESP_OK) {
+        s_initialized = true;
+    }
+    return err;
+}
+
+esp_err_t tokki_led_set(bool enabled)
+{
+    if (!s_initialized) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    return gpio_set_level(TOKKI_BOARD_STATUS_LED_GPIO, enabled ? 1 : 0);
+}
+
+esp_err_t tokki_led_blink(uint32_t count,
+                          uint32_t on_duration_ms,
+                          uint32_t off_duration_ms)
+{
+    for (uint32_t index = 0; index < count; ++index) {
+        esp_err_t err = tokki_led_set(true);
+        if (err != ESP_OK) {
+            return err;
+        }
+        vTaskDelay(pdMS_TO_TICKS(on_duration_ms));
+
+        err = tokki_led_set(false);
+        if (err != ESP_OK) {
+            return err;
+        }
+        vTaskDelay(pdMS_TO_TICKS(off_duration_ms));
+    }
+
+    return ESP_OK;
+}

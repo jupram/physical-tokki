@@ -7,10 +7,7 @@
 #include "driver/gpio.h"
 #include "driver/i2s_std.h"
 #include "freertos/FreeRTOS.h"
-
-#define SPEAKER_I2S_BCLK_GPIO GPIO_NUM_27
-#define SPEAKER_I2S_WS_GPIO GPIO_NUM_33
-#define SPEAKER_I2S_DATA_GPIO GPIO_NUM_32
+#include "tokki_board.h"
 
 #define SPEAKER_SAMPLE_RATE_HZ 16000
 #define SPEAKER_MAX_VOLUME_PERCENT 20
@@ -239,9 +236,9 @@ esp_err_t speaker_test_run(void)
         ),
         .gpio_cfg = {
             .mclk = I2S_GPIO_UNUSED,
-            .bclk = SPEAKER_I2S_BCLK_GPIO,
-            .ws = SPEAKER_I2S_WS_GPIO,
-            .dout = SPEAKER_I2S_DATA_GPIO,
+            .bclk = TOKKI_BOARD_SPEAKER_BCLK_GPIO,
+            .ws = TOKKI_BOARD_SPEAKER_WS_GPIO,
+            .dout = TOKKI_BOARD_SPEAKER_DATA_GPIO,
             .din = I2S_GPIO_UNUSED,
             .invert_flags = {
                 .mclk_inv = false,
