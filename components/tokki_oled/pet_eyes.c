@@ -249,7 +249,17 @@ static void draw_eyebrows(canvas_t *canvas,
     )];
 
     switch (expression) {
+    case PET_EYES_SURPRISED:
+        draw_quadratic_curve(canvas, 24, 10, 40, 0, 56, 10, 3);
+        draw_quadratic_curve(canvas, 72, 10, 88, 0, 104, 10, 3);
+        break;
     case PET_EYES_HAPPY:
+    case PET_EYES_WINK:
+    case PET_EYES_LOOK_LEFT:
+    case PET_EYES_LOOK_RIGHT:
+    case PET_EYES_LOOK_UP:
+    case PET_EYES_LOOK_DOWN:
+    case PET_EYES_SLEEPY:
         draw_quadratic_curve(canvas,
                              22, 16 + vertical_motion,
                              39, 7 + vertical_motion,
@@ -328,11 +338,28 @@ static void configure_expression(eye_geometry_t eyes[2],
     };
 
     switch (expression) {
+    case PET_EYES_SURPRISED:
+        eyes[0].radius_y = 19;
+        eyes[1].radius_y = 19;
+        eyes[0].pupil_radius_x = 4;
+        eyes[1].pupil_radius_x = 4;
+        eyes[0].pupil_radius_y = 5;
+        eyes[1].pupil_radius_y = 5;
+        break;
     case PET_EYES_HAPPY:
+    case PET_EYES_WINK:
+    case PET_EYES_LOOK_LEFT:
+    case PET_EYES_LOOK_RIGHT:
+    case PET_EYES_LOOK_UP:
+    case PET_EYES_LOOK_DOWN:
+    case PET_EYES_SLEEPY:
         eyes[0].openness = openness * 72 / 100;
         eyes[1].openness = openness * 72 / 100;
         eyes[0].pupil_y = 30;
         eyes[1].pupil_y = 30;
+        if (expression == PET_EYES_WINK) {
+            eyes[0].openness = 72;
+        }
         break;
     case PET_EYES_SAD:
         eyes[0].pupil_y = 36;
@@ -375,11 +402,29 @@ void pet_eyes_render(uint8_t *framebuffer,
 
     eye_geometry_t eyes[2];
     configure_expression(eyes, expression, frame);
+    if (expression >= PET_EYES_LOOK_LEFT && expression <= PET_EYES_SLEEPY) {
+        unsigned position = frame % 24;
+        int amount = position < 5 ? (int) position :
+                     position < 16 ? 4 : position < 20 ? 20 - (int) position : 0;
+        for (size_t index = 0; index < 2; ++index) {
+            eyes[index].pupil_x = eyes[index].center_x;
+            eyes[index].pupil_y = 30;
+            eyes[index].openness = 72;
+            if (expression == PET_EYES_LOOK_LEFT || expression == PET_EYES_LOOK_RIGHT) {
+                eyes[index].pupil_x += expression == PET_EYES_LOOK_LEFT ? -amount * 2 : amount * 2;
+            } else if (expression == PET_EYES_LOOK_UP || expression == PET_EYES_LOOK_DOWN) {
+                eyes[index].pupil_y += expression == PET_EYES_LOOK_UP ? -amount : amount;
+            } else {
+                eyes[index].openness = 72 - amount * 16;
+            }
+        }
+    }
     draw_eyebrows(&canvas, expression, frame);
 
     for (size_t i = 0; i < sizeof(eyes) / sizeof(eyes[0]); ++i) {
         if (eyes[i].openness <= 20) {
-            draw_closed_lid(&canvas, &eyes[i], expression == PET_EYES_HAPPY);
+            draw_closed_lid(&canvas, &eyes[i],
+                            expression == PET_EYES_HAPPY || expression >= PET_EYES_WINK);
         } else {
             draw_open_eye(&canvas, &eyes[i]);
         }
