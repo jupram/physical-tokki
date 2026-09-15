@@ -109,8 +109,8 @@ The display must be configured for I2C address `0x3C`.
 
 1. Connect the Feather V2 over USB-C.
 2. Open an exported ESP-IDF shell at the repository root.
-3. Build with `idf.py -C self_test -B build build`.
-4. Flash and monitor with `idf.py -C self_test -B build flash monitor`.
+3. Build with `idf.py -C self_test -B self_test/build build`.
+4. Flash and monitor with `idf.py -C self_test -B self_test/build flash monitor`.
 
 The serial monitor reports `[PASS]` or `[FAIL]` for each stage. A successful
 test leaves the NeoPixel green and flashes the red LED briefly every two
