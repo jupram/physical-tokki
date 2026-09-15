@@ -1,0 +1,18 @@
+menu "Feather V2 Self-Test"
+
+config FEATHER_TEST_ENABLE_WIFI_SCAN
+    bool "Enable Wi-Fi access-point scan"
+    default n
+    help
+        Enable the Wi-Fi radio and scan for nearby access points during the
+        self-test. Leave disabled for faster startup and lower power use.
+
+config FEATHER_TEST_ENABLE_SPEAKER_TEST
+    bool "Enable MAX98357A speaker test"
+    default y
+    help
+        Play three short ramped tones through a MAX98357A connected to BCLK
+        GPIO27, LRC/WS GPIO33, and DIN GPIO32. Audio samples are hard-limited
+        to 20 percent of digital full scale.
+
+endmenu
