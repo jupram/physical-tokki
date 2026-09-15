@@ -1,5 +1,8 @@
 #include "speaker_test.h"
+#include "speaker_tone.h"
+#include "tokki_speaker.h"
 
+#include <stdbool.h>
 #include <stddef.h>
 #include <stdint.h>
 #include <string.h>
@@ -9,27 +12,19 @@
 #include "freertos/FreeRTOS.h"
 #include "tokki_board.h"
 
-#define SPEAKER_SAMPLE_RATE_HZ 16000
-#define SPEAKER_MAX_VOLUME_PERCENT 20
 #define SPEAKER_TONE_DURATION_MS 300
 #define SPEAKER_SILENCE_DURATION_MS 250
-#define SPEAKER_FADE_DURATION_MS 25
 #define SPEAKER_FRAMES_PER_BUFFER 128
-
-_Static_assert(SPEAKER_MAX_VOLUME_PERCENT <= 20,
-               "Speaker test volume must never exceed 20 percent");
-
-static const int16_t SINE_TABLE[32] = {
-    0, 6393, 12539, 18204, 23170, 27245, 30273, 32137,
-    32767, 32137, 30273, 27245, 23170, 18204, 12539, 6393,
-    0, -6393, -12539, -18204, -23170, -27245, -30273, -32137,
-    -32767, -32137, -30273, -27245, -23170, -18204, -12539, -6393,
-};
 
 extern const uint8_t hello_ram_wav_start[]
     asm("_binary_hello_ram_wav_start");
 extern const uint8_t hello_ram_wav_end[]
     asm("_binary_hello_ram_wav_end");
+
+extern const uint8_t drink_water_wav_start[]
+    asm("_binary_drink_water_wav_start");
+extern const uint8_t drink_water_wav_end[]
+    asm("_binary_drink_water_wav_end");
 
 static uint16_t read_u16_le(const uint8_t *data)
 {
@@ -55,7 +50,7 @@ static esp_err_t write_frames(i2s_chan_handle_t channel,
         frames,
         expected_bytes,
         &bytes_written,
-        pdMS_TO_TICKS(1000)
+        1000
     );
     if (err != ESP_OK) {
         return err;
@@ -83,15 +78,13 @@ static esp_err_t write_silence(i2s_chan_handle_t channel,
 }
 
 static esp_err_t write_tone(i2s_chan_handle_t channel,
-                            unsigned int frequency_hz)
+                            unsigned int start_hz,
+                            unsigned int end_hz,
+                            unsigned int duration_ms)
 {
     int16_t frames[SPEAKER_FRAMES_PER_BUFFER * 2];
     const unsigned int total_frames =
-        SPEAKER_SAMPLE_RATE_HZ * SPEAKER_TONE_DURATION_MS / 1000;
-    const unsigned int fade_frames =
-        SPEAKER_SAMPLE_RATE_HZ * SPEAKER_FADE_DURATION_MS / 1000;
-    const uint32_t phase_increment =
-        (uint32_t) (((uint64_t) frequency_hz << 32) / SPEAKER_SAMPLE_RATE_HZ);
+        SPEAKER_SAMPLE_RATE_HZ * duration_ms / 1000;
     uint32_t phase = 0;
     unsigned int generated = 0;
 
@@ -101,28 +94,16 @@ static esp_err_t write_tone(i2s_chan_handle_t channel,
             frame_count = SPEAKER_FRAMES_PER_BUFFER;
         }
 
-        for (size_t i = 0; i < frame_count; ++i) {
-            unsigned int sample_index = generated + i;
-            unsigned int volume = SPEAKER_MAX_VOLUME_PERCENT;
-            if (sample_index < fade_frames) {
-                volume = SPEAKER_MAX_VOLUME_PERCENT * sample_index /
-                         fade_frames;
-            }
-            unsigned int remaining = total_frames - sample_index - 1;
-            if (remaining < fade_frames) {
-                unsigned int fade_out = SPEAKER_MAX_VOLUME_PERCENT *
-                                        remaining / fade_frames;
-                if (fade_out < volume) {
-                    volume = fade_out;
-                }
-            }
-
-            int16_t waveform = SINE_TABLE[phase >> 27];
-            int16_t sample = (int16_t) (
-                (int32_t) waveform * (int32_t) volume / 100
+        for (size_t index = 0; index < frame_count; ++index) {
+            unsigned int sample_index = generated + index;
+            unsigned int frequency_hz = start_hz +
+                (end_hz - start_hz) * sample_index / total_frames;
+            uint32_t phase_increment = (uint32_t) (
+                ((uint64_t) frequency_hz << 32) / SPEAKER_SAMPLE_RATE_HZ
             );
-            frames[i * 2] = sample;
-            frames[i * 2 + 1] = sample;
+            int16_t sample = speaker_tone_sample(sample_index, total_frames, phase);
+            frames[index * 2] = sample;
+            frames[index * 2 + 1] = sample;
             phase += phase_increment;
         }
 
@@ -135,15 +116,15 @@ static esp_err_t write_tone(i2s_chan_handle_t channel,
     return ESP_OK;
 }
 
-static esp_err_t find_wav_samples(const int16_t **samples,
+static esp_err_t find_wav_samples(const uint8_t *wav,
+                                  size_t wav_size,
+                                  const uint8_t **samples,
                                   size_t *sample_count)
 {
-    if (samples == NULL || sample_count == NULL) {
+    if (wav == NULL || samples == NULL || sample_count == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
-    const uint8_t *wav = hello_ram_wav_start;
-    size_t wav_size = hello_ram_wav_end - hello_ram_wav_start;
     if (wav_size < 12 ||
         memcmp(wav, "RIFF", 4) != 0 ||
         memcmp(wav + 8, "WAVE", 4) != 0) {
@@ -171,7 +152,7 @@ static esp_err_t find_wav_samples(const int16_t **samples,
             if (!valid_format || chunk_size % sizeof(int16_t) != 0) {
                 return ESP_ERR_INVALID_RESPONSE;
             }
-            *samples = (const int16_t *) (wav + data_offset);
+            *samples = wav + data_offset;
             *sample_count = chunk_size / sizeof(int16_t);
             return ESP_OK;
         }
@@ -182,11 +163,12 @@ static esp_err_t find_wav_samples(const int16_t **samples,
     return ESP_ERR_NOT_FOUND;
 }
 
-static esp_err_t write_speech(i2s_chan_handle_t channel)
+static esp_err_t write_speech(i2s_chan_handle_t channel,
+                              const uint8_t *wav, size_t wav_size)
 {
-    const int16_t *source = NULL;
+    const uint8_t *source = NULL;
     size_t sample_count = 0;
-    esp_err_t err = find_wav_samples(&source, &sample_count);
+    esp_err_t err = find_wav_samples(wav, wav_size, &source, &sample_count);
     if (err != ESP_OK) {
         return err;
     }
@@ -199,12 +181,13 @@ static esp_err_t write_speech(i2s_chan_handle_t channel)
             frame_count = SPEAKER_FRAMES_PER_BUFFER;
         }
 
-        for (size_t i = 0; i < frame_count; ++i) {
-            int32_t scaled = (int32_t) source[played + i] *
+        for (size_t index = 0; index < frame_count; ++index) {
+            int16_t source_sample = (int16_t) read_u16_le(source + (played + index) * 2);
+            int32_t scaled = (int32_t) source_sample *
                              SPEAKER_MAX_VOLUME_PERCENT / 100;
             int16_t sample = (int16_t) scaled;
-            frames[i * 2] = sample;
-            frames[i * 2 + 1] = sample;
+            frames[index * 2] = sample;
+            frames[index * 2 + 1] = sample;
         }
 
         err = write_frames(channel, frames, frame_count);
@@ -216,9 +199,10 @@ static esp_err_t write_speech(i2s_chan_handle_t channel)
     return ESP_OK;
 }
 
-esp_err_t speaker_test_run(void)
+static esp_err_t play_sound(bool self_test, tokki_speaker_sound_t sound)
 {
     i2s_chan_handle_t channel = NULL;
+    bool enabled = false;
     i2s_chan_config_t channel_config =
         I2S_CHANNEL_DEFAULT_CONFIG(I2S_NUM_AUTO, I2S_ROLE_MASTER);
     channel_config.auto_clear = true;
@@ -251,33 +235,53 @@ esp_err_t speaker_test_run(void)
     err = i2s_channel_init_std_mode(channel, &standard_config);
     if (err == ESP_OK) {
         err = i2s_channel_enable(channel);
+        enabled = err == ESP_OK;
     }
     if (err == ESP_OK) {
         err = write_silence(channel, SPEAKER_SILENCE_DURATION_MS);
     }
 
     static const unsigned int test_frequencies[] = {440, 660, 880};
-    for (size_t i = 0;
-         err == ESP_OK &&
-         i < sizeof(test_frequencies) / sizeof(test_frequencies[0]);
-         ++i) {
-        err = write_tone(channel, test_frequencies[i]);
+        for (size_t index = 0;
+            self_test && err == ESP_OK &&
+            index < sizeof(test_frequencies) / sizeof(test_frequencies[0]);
+            ++index) {
+           err = write_tone(channel, test_frequencies[index], test_frequencies[index],
+                         SPEAKER_TONE_DURATION_MS);
         if (err == ESP_OK) {
             err = write_silence(channel, SPEAKER_SILENCE_DURATION_MS);
         }
     }
 
     if (err == ESP_OK) {
-        err = write_speech(channel);
+        if (self_test) {
+            err = write_speech(channel, hello_ram_wav_start,
+                                hello_ram_wav_end - hello_ram_wav_start);
+        } else if (sound == TOKKI_SPEAKER_DRINK_WATER) {
+            err = write_speech(channel, drink_water_wav_start,
+                                drink_water_wav_end - drink_water_wav_start);
+        } else if (sound == TOKKI_SPEAKER_CHIRP) {
+            err = write_tone(channel, 1800, 3000, 120);
+            if (err == ESP_OK) {
+                err = write_silence(channel, 80);
+            }
+            if (err == ESP_OK) {
+                err = write_tone(channel, 2200, 3600, 120);
+            }
+        } else {
+            err = write_tone(channel, 660, 660, 180);
+        }
     }
     if (err == ESP_OK) {
         err = write_silence(channel, SPEAKER_SILENCE_DURATION_MS);
     }
 
     if (channel != NULL) {
-        esp_err_t disable_err = i2s_channel_disable(channel);
-        if (err == ESP_OK && disable_err != ESP_OK) {
-            err = disable_err;
+        if (enabled) {
+            esp_err_t disable_err = i2s_channel_disable(channel);
+            if (err == ESP_OK && disable_err != ESP_OK) {
+                err = disable_err;
+            }
         }
         esp_err_t delete_err = i2s_del_channel(channel);
         if (err == ESP_OK && delete_err != ESP_OK) {
@@ -285,4 +289,17 @@ esp_err_t speaker_test_run(void)
         }
     }
     return err;
+}
+
+esp_err_t speaker_test_run(void)
+{
+    return play_sound(true, TOKKI_SPEAKER_ALERT);
+}
+
+esp_err_t tokki_speaker_play(tokki_speaker_sound_t sound)
+{
+    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_ALERT) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    return play_sound(false, sound);
 }

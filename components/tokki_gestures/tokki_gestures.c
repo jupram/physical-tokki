@@ -4,10 +4,26 @@
 
 #include "led/led_actions.h"
 #include "neopixel/neopixel_actions.h"
+#include "oled/oled_actions.h"
+#include "speaker/speaker_actions.h"
 
 static const tokki_action_descriptor_t *const ACTIONS[] = {
     &TOKKI_LED_BLINK_ACTION,
     &TOKKI_NEOPIXEL_RAINBOW_ACTION,
+    &TOKKI_NEOPIXEL_BLINK_RED_ACTION,
+    &TOKKI_NEOPIXEL_BLINK_YELLOW_ACTION,
+    &TOKKI_NEOPIXEL_BLINK_GREEN_ACTION,
+    &TOKKI_OLED_HAPPY_ACTION,
+    &TOKKI_OLED_SAD_ACTION,
+    &TOKKI_OLED_SURPRISED_ACTION,
+    &TOKKI_OLED_BLINK_ACTION,
+    &TOKKI_OLED_CURIOUS_ACTION,
+    &TOKKI_OLED_DRINK_WATER_ACTION,
+    &TOKKI_OLED_WATER_DROP_ACTION,
+    &TOKKI_OLED_FIRE_ACTION,
+    &TOKKI_SPEAKER_DRINK_WATER_ACTION,
+    &TOKKI_SPEAKER_CHIRP_ACTION,
+    &TOKKI_SPEAKER_ALERT_ACTION,
 };
 
 size_t tokki_action_count(void)

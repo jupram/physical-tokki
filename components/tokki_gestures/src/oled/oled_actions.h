@@ -1,0 +1,12 @@
+#pragma once
+
+#include "tokki_gestures.h"
+
+extern const tokki_action_descriptor_t TOKKI_OLED_HAPPY_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_SAD_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_SURPRISED_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_BLINK_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_CURIOUS_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_DRINK_WATER_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_WATER_DROP_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_FIRE_ACTION;

@@ -1,0 +1,94 @@
+#include "tokki_oled.h"
+
+#include "driver/gpio.h"
+#include "driver/i2c_master.h"
+#include "esp_lcd_panel_io.h"
+#include "esp_lcd_panel_ops.h"
+#include "esp_lcd_panel_vendor.h"
+#include "tokki_board.h"
+
+static i2c_master_bus_handle_t s_bus;
+static esp_lcd_panel_io_handle_t s_io;
+static esp_lcd_panel_handle_t s_panel;
+
+static esp_err_t initialize_display(void)
+{
+    if (s_panel != NULL) {
+        return ESP_OK;
+    }
+
+    i2c_master_bus_config_t bus_config = {
+        .clk_source = I2C_CLK_SRC_DEFAULT,
+        .i2c_port = -1,
+        .scl_io_num = TOKKI_BOARD_I2C_SCL_GPIO,
+        .sda_io_num = TOKKI_BOARD_I2C_SDA_GPIO,
+        .glitch_ignore_cnt = 7,
+        .flags.enable_internal_pullup = true,
+    };
+    esp_err_t err = i2c_new_master_bus(&bus_config, &s_bus);
+    if (err != ESP_OK) {
+        return err;
+    }
+
+    err = i2c_master_probe(s_bus, 0x3C, 100);
+    esp_lcd_panel_io_i2c_config_t io_config = {
+        .dev_addr = 0x3C,
+        .scl_speed_hz = 400000,
+        .transaction_timeout_ms = 1000,
+        .control_phase_bytes = 1,
+        .dc_bit_offset = 6,
+        .lcd_cmd_bits = 8,
+        .lcd_param_bits = 8,
+    };
+    if (err == ESP_OK) {
+        err = esp_lcd_new_panel_io_i2c(s_bus, &io_config, &s_io);
+    }
+    esp_lcd_panel_ssd1306_config_t ssd1306_config = {
+        .height = TOKKI_OLED_HEIGHT,
+        .contrast = 160,
+    };
+    esp_lcd_panel_dev_config_t panel_config = {
+        .reset_gpio_num = GPIO_NUM_NC,
+        .bits_per_pixel = 1,
+        .vendor_config = &ssd1306_config,
+    };
+    if (err == ESP_OK) {
+        err = esp_lcd_new_panel_ssd1306(s_io, &panel_config, &s_panel);
+    }
+    if (err == ESP_OK) {
+        err = esp_lcd_panel_reset(s_panel);
+    }
+    if (err == ESP_OK) {
+        err = esp_lcd_panel_init(s_panel);
+    }
+    if (err == ESP_OK) {
+        err = esp_lcd_panel_disp_on_off(s_panel, true);
+    }
+    if (err != ESP_OK) {
+        if (s_panel != NULL) {
+            esp_lcd_panel_del(s_panel);
+            s_panel = NULL;
+        }
+        if (s_io != NULL) {
+            esp_lcd_panel_io_del(s_io);
+            s_io = NULL;
+        }
+        i2c_del_master_bus(s_bus);
+        s_bus = NULL;
+    }
+    return err;
+}
+
+esp_err_t tokki_oled_draw_frame(const uint8_t *framebuffer, size_t size)
+{
+    if (framebuffer == NULL || size != TOKKI_OLED_FRAME_SIZE) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t err = initialize_display();
+    if (err != ESP_OK) {
+        return err;
+    }
+    return esp_lcd_panel_draw_bitmap(s_panel, 0, 0,
+                                      TOKKI_OLED_WIDTH, TOKKI_OLED_HEIGHT,
+                                      framebuffer);
+}

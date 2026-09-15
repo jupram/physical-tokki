@@ -249,6 +249,10 @@ static void draw_eyebrows(canvas_t *canvas,
     )];
 
     switch (expression) {
+    case PET_EYES_SURPRISED:
+        draw_quadratic_curve(canvas, 24, 10, 40, 0, 56, 10, 3);
+        draw_quadratic_curve(canvas, 72, 10, 88, 0, 104, 10, 3);
+        break;
     case PET_EYES_HAPPY:
         draw_quadratic_curve(canvas,
                              22, 16 + vertical_motion,
@@ -328,6 +332,14 @@ static void configure_expression(eye_geometry_t eyes[2],
     };
 
     switch (expression) {
+    case PET_EYES_SURPRISED:
+        eyes[0].radius_y = 19;
+        eyes[1].radius_y = 19;
+        eyes[0].pupil_radius_x = 4;
+        eyes[1].pupil_radius_x = 4;
+        eyes[0].pupil_radius_y = 5;
+        eyes[1].pupil_radius_y = 5;
+        break;
     case PET_EYES_HAPPY:
         eyes[0].openness = openness * 72 / 100;
         eyes[1].openness = openness * 72 / 100;
