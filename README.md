@@ -3,7 +3,7 @@
 Physical Tokki is an ESP32-based desktop pet with OLED eye expressions,
 speaker notifications, a status LED, and NeoPixel effects. The repository is
 being organized so contributors can add gestures independently of the board
-diagnostics and desktop integrations.
+diagnostics and desktop integrations
 
 ## Repository layout
 
