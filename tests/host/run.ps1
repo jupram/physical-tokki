@@ -52,7 +52,9 @@ try {
     Remove-Item $build -Recurse -Force
 }
 
-$audioPath = "$repo/components/tokki_speaker/audio/drink_water.wav"
+function Test-SpeakerWav {
+param([string] $audioPath, [int] $expectedSamples = 0)
+
 $reader = [System.IO.BinaryReader]::new([System.IO.File]::OpenRead($audioPath))
 try {
     $ascii = [System.Text.Encoding]::ASCII
@@ -88,8 +90,14 @@ try {
         }
         $reader.BaseStream.Position = $next
     }
-    if ($sampleCount -lt 1600 -or $sampleCount -gt 80000 -or $peak -eq 0) { throw 'Speech must be non-silent and between 0.1 and 5 seconds.' }
-    Write-Output "PASS: Drink water WAV, 16 kHz mono PCM16, $($sampleCount / 16000) seconds, scaled peak $([Math]::Truncate($peak * 0.2))/32768"
+    if ($sampleCount -lt 1600 -or $sampleCount -gt 80000 -or $peak -eq 0) { throw 'Audio must be non-silent and between 0.1 and 5 seconds.' }
+    if ($expectedSamples -gt 0 -and $sampleCount -ne $expectedSamples) { throw 'Unexpected sample count.' }
+    if ($expectedSamples -gt 0 -and $sampleCount / 16000 + 0.5 -gt 1.5) { throw 'Sound plus padding exceeds 1.5 seconds.' }
+    Write-Output "PASS: $([IO.Path]::GetFileName($audioPath)), 16 kHz mono PCM16, $($sampleCount / 16000) seconds, scaled peak $([Math]::Truncate($peak * 0.2))/32768"
 } finally {
     $reader.Dispose()
 }
+}
+
+Test-SpeakerWav "$repo/components/tokki_speaker/audio/drink_water.wav"
+Test-SpeakerWav "$repo/components/tokki_speaker/audio/dog_bark.wav" -expectedSamples 8000

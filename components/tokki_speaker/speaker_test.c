@@ -26,6 +26,11 @@ extern const uint8_t drink_water_wav_start[]
 extern const uint8_t drink_water_wav_end[]
     asm("_binary_drink_water_wav_end");
 
+extern const uint8_t dog_bark_wav_start[]
+    asm("_binary_dog_bark_wav_start");
+extern const uint8_t dog_bark_wav_end[]
+    asm("_binary_dog_bark_wav_end");
+
 static uint16_t read_u16_le(const uint8_t *data)
 {
     return (uint16_t) data[0] | ((uint16_t) data[1] << 8);
@@ -80,7 +85,8 @@ static esp_err_t write_silence(i2s_chan_handle_t channel,
 static esp_err_t write_tone(i2s_chan_handle_t channel,
                             unsigned int start_hz,
                             unsigned int end_hz,
-                            unsigned int duration_ms)
+                            unsigned int duration_ms,
+                            unsigned int gain_percent)
 {
     int16_t frames[SPEAKER_FRAMES_PER_BUFFER * 2];
     const unsigned int total_frames =
@@ -96,12 +102,12 @@ static esp_err_t write_tone(i2s_chan_handle_t channel,
 
         for (size_t index = 0; index < frame_count; ++index) {
             unsigned int sample_index = generated + index;
-            unsigned int frequency_hz = start_hz +
-                (end_hz - start_hz) * sample_index / total_frames;
+            unsigned int frequency_hz = speaker_tone_frequency(
+                start_hz, end_hz, sample_index, total_frames);
             uint32_t phase_increment = (uint32_t) (
                 ((uint64_t) frequency_hz << 32) / SPEAKER_SAMPLE_RATE_HZ
             );
-            int16_t sample = speaker_tone_sample(sample_index, total_frames, phase);
+            int16_t sample = speaker_tone_scaled_sample(sample_index, total_frames, phase, gain_percent);
             frames[index * 2] = sample;
             frames[index * 2 + 1] = sample;
             phase += phase_increment;
@@ -247,7 +253,7 @@ static esp_err_t play_sound(bool self_test, tokki_speaker_sound_t sound)
             index < sizeof(test_frequencies) / sizeof(test_frequencies[0]);
             ++index) {
            err = write_tone(channel, test_frequencies[index], test_frequencies[index],
-                         SPEAKER_TONE_DURATION_MS);
+                         SPEAKER_TONE_DURATION_MS, 100);
         if (err == ESP_OK) {
             err = write_silence(channel, SPEAKER_SILENCE_DURATION_MS);
         }
@@ -260,6 +266,9 @@ static esp_err_t play_sound(bool self_test, tokki_speaker_sound_t sound)
         } else if (sound == TOKKI_SPEAKER_DRINK_WATER) {
             err = write_speech(channel, drink_water_wav_start,
                                 drink_water_wav_end - drink_water_wav_start);
+        } else if (sound == TOKKI_SPEAKER_BARK) {
+            err = write_speech(channel, dog_bark_wav_start,
+                                dog_bark_wav_end - dog_bark_wav_start);
         } else {
             size_t count = 0;
             const speaker_tone_step_t *steps = speaker_sound_steps(sound, &count);
@@ -268,7 +277,8 @@ static esp_err_t play_sound(bool self_test, tokki_speaker_sound_t sound)
             }
             for (size_t index = 0; err == ESP_OK && index < count; ++index) {
                 err = write_tone(channel, steps[index].start_hz,
-                                  steps[index].end_hz, steps[index].duration_ms);
+                                  steps[index].end_hz, steps[index].duration_ms,
+                                  steps[index].gain_percent);
                 if (err == ESP_OK && steps[index].silence_ms > 0) {
                     err = write_silence(channel, steps[index].silence_ms);
                 }
@@ -301,7 +311,7 @@ esp_err_t speaker_test_run(void)
 
 esp_err_t tokki_speaker_play(tokki_speaker_sound_t sound)
 {
-    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_PING) {
+    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_BARK) {
         return ESP_ERR_INVALID_ARG;
     }
     return play_sound(false, sound);

@@ -12,10 +12,20 @@ static const int16_t SINE_TABLE[32] = {
 
 const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size_t *count)
 {
-    static const speaker_tone_step_t chirp[] = {{1800, 3000, 120, 80}, {2200, 3600, 120, 0}};
-    static const speaker_tone_step_t alert[] = {{660, 660, 180, 0}};
-    static const speaker_tone_step_t chime[] = {{784, 784, 160, 60}, {1047, 1047, 240, 0}};
-    static const speaker_tone_step_t ping[] = {{1320, 1320, 100, 0}};
+    static const speaker_tone_step_t chirp[] = {{1800, 3000, 120, 80, 100}, {2200, 3600, 120, 0, 100}};
+    static const speaker_tone_step_t alert[] = {{660, 660, 180, 0, 100}};
+    static const speaker_tone_step_t chime[] = {{784, 784, 160, 60, 100}, {1047, 1047, 240, 0, 100}};
+    static const speaker_tone_step_t ping[] = {{1320, 1320, 100, 0, 100}};
+    static const speaker_tone_step_t bubble[] = {{1200, 480, 90, 0, 100}};
+    static const speaker_tone_step_t whistle[] = {{900, 2100, 280, 0, 100}};
+    static const speaker_tone_step_t sigh[] = {{850, 350, 360, 0, 100}};
+    static const speaker_tone_step_t boing[] = {{350, 900, 100, 0, 100}, {900, 500, 140, 0, 100}};
+    static const speaker_tone_step_t question[] = {{700, 700, 90, 50, 100}, {950, 1250, 180, 0, 100}};
+    static const speaker_tone_step_t downstep[] = {{740, 740, 130, 40, 100}, {494, 494, 190, 0, 100}};
+    static const speaker_tone_step_t sparkle[] = {{1047, 1047, 70, 30, 100}, {1319, 1319, 70, 30, 100}, {1568, 1568, 130, 0, 100}};
+    static const speaker_tone_step_t trill[] = {{1400, 1700, 70, 25, 100}, {1400, 1700, 70, 25, 100}, {1400, 1700, 70, 0, 100}};
+    static const speaker_tone_step_t knock[] = {{500, 200, 65, 100, 100}, {500, 200, 65, 0, 100}};
+    static const speaker_tone_step_t sonar[] = {{880, 880, 120, 110, 100}, {880, 880, 120, 0, 40}};
     if (count == NULL) {
         return NULL;
     }
@@ -33,9 +43,52 @@ const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size
     case TOKKI_SPEAKER_PING:
         *count = sizeof(ping) / sizeof(ping[0]);
         return ping;
+    case TOKKI_SPEAKER_BUBBLE:
+        *count = sizeof(bubble) / sizeof(bubble[0]);
+        return bubble;
+    case TOKKI_SPEAKER_WHISTLE:
+        *count = sizeof(whistle) / sizeof(whistle[0]);
+        return whistle;
+    case TOKKI_SPEAKER_SIGH:
+        *count = sizeof(sigh) / sizeof(sigh[0]);
+        return sigh;
+    case TOKKI_SPEAKER_BOING:
+        *count = sizeof(boing) / sizeof(boing[0]);
+        return boing;
+    case TOKKI_SPEAKER_QUESTION:
+        *count = sizeof(question) / sizeof(question[0]);
+        return question;
+    case TOKKI_SPEAKER_DOWNSTEP:
+        *count = sizeof(downstep) / sizeof(downstep[0]);
+        return downstep;
+    case TOKKI_SPEAKER_SPARKLE:
+        *count = sizeof(sparkle) / sizeof(sparkle[0]);
+        return sparkle;
+    case TOKKI_SPEAKER_TRILL:
+        *count = sizeof(trill) / sizeof(trill[0]);
+        return trill;
+    case TOKKI_SPEAKER_KNOCK:
+        *count = sizeof(knock) / sizeof(knock[0]);
+        return knock;
+    case TOKKI_SPEAKER_SONAR:
+        *count = sizeof(sonar) / sizeof(sonar[0]);
+        return sonar;
     default:
         return NULL;
     }
+}
+
+unsigned speaker_tone_frequency(unsigned start_hz, unsigned end_hz,
+                                  unsigned sample_index, unsigned total_frames)
+{
+    if (total_frames == 0) {
+        return start_hz;
+    }
+    if (sample_index >= total_frames) {
+        return end_hz;
+    }
+    int64_t delta = (int64_t) end_hz - start_hz;
+    return (unsigned) ((int64_t) start_hz + delta * sample_index / total_frames);
 }
 
 int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
@@ -57,4 +110,12 @@ int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
         }
     }
     return (int16_t) ((int32_t) SINE_TABLE[phase >> 27] * (int32_t) volume / 100);
+}
+
+int16_t speaker_tone_scaled_sample(unsigned sample_index, unsigned total_frames,
+                                   uint32_t phase, unsigned gain_percent)
+{
+    unsigned gain = gain_percent > 100 ? 100 : gain_percent;
+    int16_t sample = speaker_tone_sample(sample_index, total_frames, phase);
+    return (int16_t) ((int32_t) sample * (int32_t) gain / 100);
 }
