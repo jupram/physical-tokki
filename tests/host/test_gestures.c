@@ -313,7 +313,7 @@ static void export_tone(const char *id, tokki_speaker_sound_t sound)
         unsigned frames = SPEAKER_SAMPLE_RATE_HZ * steps[index].duration_ms / 1000;
         for (unsigned frame = 0; frame < frames; ++frame) {
             unsigned frequency = speaker_step_frequency(&steps[index], frame, frames);
-            int16_t sample = speaker_tone_sample(frame, frames, phase);
+            int16_t sample = speaker_tone_scaled_sample(frame, frames, phase, steps[index].gain_percent);
             assert(sample >= -6553 && sample <= 6553);
             fprintf(preview_output, "%02x%02x", (unsigned) ((uint16_t) sample & 255),
                     (unsigned) ((uint16_t) sample >> 8));
@@ -331,12 +331,16 @@ static void export_tone(const char *id, tokki_speaker_sound_t sound)
 
 static void test_speaker(void)
 {
-    const char *ids[] = {"speaker.drink_water", "speaker.chirp", "speaker.alert", "speaker.chime", "speaker.ping", "speaker.dog_bark"};
+    const char *ids[] = {"speaker.drink_water", "speaker.chirp", "speaker.alert", "speaker.chime", "speaker.ping",
+                         "speaker.dog_bark",
+                         "speaker.bubble", "speaker.whistle", "speaker.sigh", "speaker.boing",
+                         "speaker.question", "speaker.downstep", "speaker.sparkle", "speaker.trill",
+                         "speaker.knock", "speaker.sonar", "speaker.bark"};
     for (size_t index = 0; index < sizeof(ids) / sizeof(ids[0]); ++index) {
         speaker_result = ESP_OK;
         assert(tokki_action_run(ids[index]) == ESP_OK);
         assert(last_sound == (tokki_speaker_sound_t) index);
-        if (index > 0 && index < TOKKI_SPEAKER_DOG_BARK) {
+    if (index > 0 && last_sound != TOKKI_SPEAKER_BARK && last_sound != TOKKI_SPEAKER_DOG_BARK) {
             export_tone(ids[index], (tokki_speaker_sound_t) index);
         }
         speaker_result = ESP_FAIL;
@@ -345,21 +349,44 @@ static void test_speaker(void)
     size_t step_count = 99;
     assert(speaker_sound_steps(TOKKI_SPEAKER_CHIME, NULL) == NULL);
     assert(speaker_sound_steps((tokki_speaker_sound_t) 99, &step_count) == NULL && step_count == 0);
+    assert(speaker_sound_steps(TOKKI_SPEAKER_BARK, &step_count) == NULL && step_count == 0);
     assert(speaker_sound_steps(TOKKI_SPEAKER_DOG_BARK, &step_count) == NULL && step_count == 0);
-    const unsigned expected_duration[] = {0, 320, 180, 460, 100};
-    for (int sound = TOKKI_SPEAKER_CHIRP; sound <= TOKKI_SPEAKER_PING; ++sound) {
+    assert(TOKKI_SPEAKER_DOG_BARK == 5);
+    const unsigned expected_duration[] = {0, 320, 180, 460, 100, 0, 90, 280, 360, 240, 320, 360, 330, 260, 230, 350};
+    const unsigned expected_start[] = {0, 1800, 660, 784, 1320, 0, 1200, 900, 850, 350, 700, 740, 1047, 1400, 500, 880};
+    const unsigned expected_end[] = {0, 3000, 660, 784, 1320, 0, 480, 2100, 350, 900, 700, 740, 1047, 1700, 200, 880};
+    const size_t expected_steps[] = {0, 2, 1, 2, 1, 0, 1, 1, 1, 2, 2, 2, 3, 3, 2, 2};
+    for (int sound = TOKKI_SPEAKER_CHIRP; sound <= TOKKI_SPEAKER_SONAR; ++sound) {
+        if (sound == TOKKI_SPEAKER_DOG_BARK) {
+            continue;
+        }
         const speaker_tone_step_t *steps = speaker_sound_steps((tokki_speaker_sound_t) sound, &step_count);
-        assert(steps != NULL && step_count > 0 && step_count <= 2);
+        assert(steps != NULL && step_count == expected_steps[sound]);
+        assert(steps[0].start_hz == expected_start[sound]);
+        assert(steps[0].end_hz == expected_end[sound]);
         unsigned duration = 0;
         for (size_t index = 0; index < step_count; ++index) {
-            assert(steps[index].start_hz > 0 && steps[index].end_hz < SPEAKER_SAMPLE_RATE_HZ / 2);
-            assert(steps[index].start_hz < SPEAKER_SAMPLE_RATE_HZ / 2 && steps[index].end_hz > 0);
-            assert(steps[index].end_hz >= steps[index].start_hz);
+            unsigned start = steps[index].start_hz;
+            unsigned end = steps[index].end_hz;
+            assert(start > 0 && start < SPEAKER_SAMPLE_RATE_HZ / 2);
+            assert(end > 0 && end < SPEAKER_SAMPLE_RATE_HZ / 2);
+            assert(steps[index].gain_percent == (sound == TOKKI_SPEAKER_SONAR && index == 1 ? 40U : 100U));
             duration += steps[index].duration_ms + steps[index].silence_ms;
             unsigned frames = SPEAKER_SAMPLE_RATE_HZ * steps[index].duration_ms / 1000;
+            unsigned previous = start;
             for (unsigned frame = 0; frame < frames; ++frame) {
+                unsigned frequency = speaker_step_frequency(&steps[index], frame, frames);
+                assert(frequency >= (start < end ? start : end));
+                assert(frequency <= (start > end ? start : end));
+                assert(start <= end ? frequency >= previous : frequency <= previous);
+                if (end >= start) {
+                    assert(frequency == start + (end - start) * frame / frames);
+                }
+                previous = frequency;
                 for (uint32_t phase_index = 0; phase_index < 32; ++phase_index) {
-                    int16_t sample = speaker_tone_sample(frame, frames, phase_index << 27);
+                    int16_t sample = speaker_tone_scaled_sample(frame, frames, phase_index << 27, steps[index].gain_percent);
+                    int16_t full_sample = speaker_tone_sample(frame, frames, phase_index << 27);
+                    assert(sample == (int32_t) full_sample * (int32_t) steps[index].gain_percent / 100);
                     assert(sample >= -6553 && sample <= 6553);
                     if (frame == 0 || frame == frames - 1) {
                         assert(sample == 0);
@@ -368,11 +395,22 @@ static void test_speaker(void)
             }
         }
         assert(duration == expected_duration[sound]);
+        if (sound >= TOKKI_SPEAKER_BUBBLE) {
+            assert(duration + 500 <= 1500);
+        }
         if (sound == TOKKI_SPEAKER_CHIME) {
             assert(step_count == 2 && steps[1].start_hz > steps[0].start_hz);
             assert(steps[0].duration_ms + steps[1].duration_ms == 400);
         }
     }
+    const speaker_tone_step_t falling = {1200, 480, 90, 0, 100};
+    assert(speaker_step_frequency(&falling, 720, 1440) == 840);
+    assert(speaker_step_frequency(&falling, 0, 0) == 480);
+    assert(speaker_step_frequency(&falling, 0, 1440) == 1200);
+    assert(speaker_step_frequency(&falling, 1440, 1440) == 480);
+    assert(speaker_step_frequency(&falling, 1441, 1440) == 480);
+    assert(speaker_tone_scaled_sample(500, 1920, 8U << 27, 0) == 0);
+    assert(speaker_tone_scaled_sample(500, 1920, 8U << 27, UINT32_MAX) == speaker_tone_sample(500, 1920, 8U << 27));
     for (unsigned frame = 0; frame < 4800; ++frame) {
         for (uint32_t phase_index = 0; phase_index < 32; ++phase_index) {
             int16_t sample = speaker_tone_sample(frame, 4800, phase_index << 27);
@@ -493,7 +531,8 @@ int main(int argc, char **argv)
         assert(fopen_s(&preview_output, argv[2], "w") == 0);
         fputs("window.TOKKI_PREVIEW = {\n", preview_output);
     }
-    assert(tokki_action_count() == 31);
+    assert(tokki_action_count() == 42);
+    assert(tokki_action_at(30) == tokki_action_find("speaker.dog_bark"));
     assert(tokki_action_at(tokki_action_count()) == NULL);
     assert(tokki_action_find(NULL) == NULL);
     assert(tokki_action_run("missing") == ESP_ERR_NOT_FOUND);
@@ -548,6 +587,8 @@ int main(int argc, char **argv)
         begin_preview("neopixel.rainbow", 3840, "rainbow");
         fputc('}', preview_output);
         begin_preview("speaker.drink_water", 2230, "speech");
+        fputc('}', preview_output);
+        begin_preview("speaker.bark", 1000, "recording");
         fputc('}', preview_output);
         begin_preview("speaker.dog_bark", 1020, "recording");
         fprintf(preview_output, ",\"sampleRate\":%u,\"pcm\":\"", SPEAKER_SAMPLE_RATE_HZ);
