@@ -26,6 +26,11 @@ extern const uint8_t drink_water_wav_start[]
 extern const uint8_t drink_water_wav_end[]
     asm("_binary_drink_water_wav_end");
 
+extern const uint8_t dog_bark_wav_start[]
+    asm("_binary_dog_bark_wav_start");
+extern const uint8_t dog_bark_wav_end[]
+    asm("_binary_dog_bark_wav_end");
+
 static uint16_t read_u16_le(const uint8_t *data)
 {
     return (uint16_t) data[0] | ((uint16_t) data[1] << 8);
@@ -87,6 +92,7 @@ static esp_err_t write_tone(i2s_chan_handle_t channel,
         SPEAKER_SAMPLE_RATE_HZ * duration_ms / 1000;
     uint32_t phase = 0;
     unsigned int generated = 0;
+    const speaker_tone_step_t step = {start_hz, end_hz, duration_ms, 0};
 
     while (generated < total_frames) {
         size_t frame_count = total_frames - generated;
@@ -96,8 +102,7 @@ static esp_err_t write_tone(i2s_chan_handle_t channel,
 
         for (size_t index = 0; index < frame_count; ++index) {
             unsigned int sample_index = generated + index;
-            unsigned int frequency_hz = start_hz +
-                (end_hz - start_hz) * sample_index / total_frames;
+            unsigned int frequency_hz = speaker_step_frequency(&step, sample_index, total_frames);
             uint32_t phase_increment = (uint32_t) (
                 ((uint64_t) frequency_hz << 32) / SPEAKER_SAMPLE_RATE_HZ
             );
@@ -260,6 +265,9 @@ static esp_err_t play_sound(bool self_test, tokki_speaker_sound_t sound)
         } else if (sound == TOKKI_SPEAKER_DRINK_WATER) {
             err = write_speech(channel, drink_water_wav_start,
                                 drink_water_wav_end - drink_water_wav_start);
+        } else if (sound == TOKKI_SPEAKER_DOG_BARK) {
+            err = write_speech(channel, dog_bark_wav_start,
+                                dog_bark_wav_end - dog_bark_wav_start);
         } else {
             size_t count = 0;
             const speaker_tone_step_t *steps = speaker_sound_steps(sound, &count);
@@ -301,7 +309,7 @@ esp_err_t speaker_test_run(void)
 
 esp_err_t tokki_speaker_play(tokki_speaker_sound_t sound)
 {
-    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_PING) {
+    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_DOG_BARK) {
         return ESP_ERR_INVALID_ARG;
     }
     return play_sound(false, sound);

@@ -1,69 +1,69 @@
-import {
-  Bell,
-  Cable,
-  CircleStop,
-  Eye,
-  Gauge,
-  Lightbulb,
-  Mail,
-  Play,
-  Plus,
-  Radio,
-  Sparkles,
-  Volume2,
-} from "lucide-react";
-import { useState } from "react";
+import { Bell, Cable, CircleStop, Gauge, Play, Radio, RefreshCw, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
+import { client, emptySnapshot, isInFlight, queueSummary, type Port, type Snapshot } from "./native";
 import "./App.css";
 
 type View = "device" | "gestures" | "events";
-type DeviceKind = "oled" | "speaker" | "led" | "neopixel";
-
-type Action = {
-  id: string;
-  name: string;
-  device: DeviceKind;
-  duration: string;
-};
-
-const actions: Action[] = [
-  { id: "led.blink", name: "Blink status LED", device: "led", duration: "1.2 sec" },
-  { id: "neopixel.rainbow", name: "Rainbow", device: "neopixel", duration: "2.6 sec" },
-];
-
-const deviceIcons = {
-  oled: Eye,
-  speaker: Volume2,
-  led: Lightbulb,
-  neopixel: Sparkles,
-};
 
 function App() {
   const [view, setView] = useState<View>("device");
-  const [connected, setConnected] = useState(false);
-  const [activeAction, setActiveAction] = useState<string | null>(null);
-  const [ruleEnabled, setRuleEnabled] = useState(true);
-  const [activity, setActivity] = useState("Mock transport ready");
+  const [snapshot, setSnapshot] = useState<Snapshot>(emptySnapshot);
+  const [ports, setPorts] = useState<Port[]>([]);
+  const [selectedPort, setSelectedPort] = useState("");
+  const [localError, setLocalError] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [filter, setFilter] = useState("");
 
-  function toggleConnection() {
-    const nextConnected = !connected;
-    setConnected(nextConnected);
-    setActiveAction(null);
-    setActivity(nextConnected ? "Connected to mock Feather V2" : "Disconnected");
+  async function refreshPorts() {
+    setScanning(true);
+    try {
+      const found = await client.ports();
+      setPorts(found);
+      setSelectedPort((current) => found.some((port) => port.name === current) ? current : (found[0]?.name ?? ""));
+      setLocalError(null);
+    } catch (error) { setLocalError(String(error)); }
+    finally { setScanning(false); }
   }
 
-  function previewAction(action: Action) {
-    if (!connected) {
-      setActivity("Connect a device before previewing an action");
-      return;
+  useEffect(() => {
+    if (!client.native) return;
+    void refreshPorts();
+    let stopped = false;
+    let timer: ReturnType<typeof setTimeout>;
+    async function poll() {
+      try {
+        const next = await client.snapshot();
+        if (!stopped) setSnapshot((previous) => next.revision >= previous.revision ? next : previous);
+      } catch (error) {
+        if (!stopped) setLocalError(`Native status unavailable: ${String(error)}`);
+      }
+      // Polling only reads durable backend state; it never manufactures lifecycle transitions.
+      if (!stopped) timer = setTimeout(poll, 250);
     }
+    void poll();
+    return () => { stopped = true; clearTimeout(timer); };
+  }, []);
 
-    setActiveAction(action.id);
-    setActivity(`Running ${action.id}`);
-    window.setTimeout(() => {
-      setActiveAction(null);
-      setActivity(`Completed ${action.id}`);
-    }, 900);
+  async function command(operation: () => Promise<void>) {
+    setBusy(true);
+    setLocalError(null);
+    try { await operation(); }
+    catch (error) { setLocalError(String(error)); }
+    finally { setBusy(false); }
   }
+
+  const connected = snapshot.status === "connected";
+  const connecting = snapshot.status === "connecting" || snapshot.status === "loading";
+  const ownsPort = connected || connecting;
+  const queue = queueSummary(snapshot.activity);
+  const visibleActions = snapshot.actions.filter((action) =>
+    `${action.id} ${action.name} ${action.device}`.toLowerCase().includes(filter.toLowerCase()));
+  const error = localError ?? snapshot.lastError;
+  const statusText = !client.native ? "Native app required" : ({
+    disconnected: "Disconnected", connecting: "Identifying device…", loading: "Loading catalog…",
+    connected: "Connected", error: "Connection failed",
+  }[snapshot.status] ?? snapshot.status);
 
   return (
     <div className="app-shell">
@@ -72,144 +72,92 @@ function App() {
           <span className="brand-mark" aria-hidden="true"><span /><span /></span>
           <div><strong>Physical Tokki</strong><small>Pet control desk</small></div>
         </div>
-
         <nav aria-label="Main navigation">
-          <button className={view === "device" ? "nav-item active" : "nav-item"} onClick={() => setView("device")}>
-            <Gauge size={18} /> Device
-          </button>
-          <button className={view === "gestures" ? "nav-item active" : "nav-item"} onClick={() => setView("gestures")}>
-            <Sparkles size={18} /> Gestures <span className="nav-count">{actions.length}</span>
-          </button>
-          <button className={view === "events" ? "nav-item active" : "nav-item"} onClick={() => setView("events")}>
-            <Bell size={18} /> Events <span className="nav-count">1</span>
-          </button>
+          <button className={`nav-item ${view === "device" ? "active" : ""}`} onClick={() => setView("device")}><Gauge size={18} /> Device</button>
+          <button className={`nav-item ${view === "gestures" ? "active" : ""}`} onClick={() => setView("gestures")}><Sparkles size={18} /> Gestures <span className="nav-count">{snapshot.actions.length}</span></button>
+          <button className={`nav-item ${view === "events" ? "active" : ""}`} onClick={() => setView("events")}><Bell size={18} /> Events <span className="nav-count">Later</span></button>
         </nav>
-
         <div className="sidebar-status">
-          <span className="status-dot mock" />
-          <div><strong>Mock transport</strong><small>Serial backend pending</small></div>
+          <Radio size={18} />
+          <div><strong>{statusText}</strong><small>{snapshot.port ?? "USB serial · 115200 8N1"}</small></div>
         </div>
       </aside>
 
       <main>
         <header className="topbar">
-          <div>
-            <span className="eyebrow">TOKKI DESKTOP / 0.1.0</span>
-            <h1>{view === "device" ? "Device" : view === "gestures" ? "Gestures" : "Events"}</h1>
-          </div>
-          <button className={connected ? "connection-button connected" : "connection-button"} onClick={toggleConnection}>
-            {connected ? <CircleStop size={17} /> : <Cable size={17} />}
-            {connected ? "Disconnect" : "Connect mock"}
-          </button>
+          <div><span className="eyebrow">TOKKI DESKTOP / NATIVE SERIAL</span><h1>{view === "device" ? "Device" : view === "gestures" ? "Gestures" : "Events"}</h1></div>
+          {ownsPort && <button className="connection-button" disabled={busy} onClick={() => void command(() => client.disconnect())}><CircleStop size={17} /> Disconnect</button>}
         </header>
-
         <div className="workspace">
+          {!client.native && <div className="notice" role="status"><strong>Native desktop app required</strong><p>This browser preview cannot open USB serial ports. Run <code>npm run tauri dev</code> to connect to your pet. There is no mock device or simulated success.</p></div>}
+          {error && <div className="notice error" role="alert"><strong>Operation failed</strong><p>{error}</p></div>}
+
           {view === "device" && (
             <section aria-labelledby="device-heading">
-              <div className="section-heading">
-                <div><h2 id="device-heading">Feather V2</h2><p>USB serial / COM3</p></div>
-                <span className={connected ? "state-pill online" : "state-pill"}>
-                  <span className="status-dot" /> {connected ? "Online" : "Offline"}
-                </span>
+              <div className="section-heading"><div><h2 id="device-heading">Connect your pet</h2><p>Choose its USB UART port. Discovery never opens ports automatically.</p></div><span className={`state-pill ${connected ? "online" : ""}`}>{statusText}</span></div>
+              <div className="connection-panel">
+                <label htmlFor="serial-port">Serial port</label>
+                <div className="connection-controls">
+                  <select id="serial-port" value={selectedPort} onChange={(event) => setSelectedPort(event.target.value)} disabled={!client.native || ownsPort || scanning}>
+                    {ports.length === 0 && <option value="">No serial ports found</option>}
+                    {ports.map((port) => <option key={port.name} value={port.name}>{port.name} — {port.description}</option>)}
+                  </select>
+                  <button className="connection-button" disabled={!client.native || scanning || busy} onClick={() => void refreshPorts()}><RefreshCw size={16} /> {scanning ? "Scanning…" : "Rescan"}</button>
+                  <button className="primary-button" disabled={!client.native || !selectedPort || ownsPort || busy} onClick={() => void command(() => client.connect(selectedPort))}><Cable size={16} /> Connect</button>
+                </div>
+                <p>Close ESP-IDF Monitor and other serial apps first. DTR / RTS are deasserted to avoid resetting the ESP32.</p>
               </div>
-
               <div className="metric-grid">
-                <article><span>Firmware</span><strong>0.1.0</strong><small>physical_tokki</small></article>
-                <article><span>Protocol</span><strong>v1</strong><small>Newline JSON</small></article>
-                <article><span>Actions</span><strong>{actions.length}</strong><small>Registry entries</small></article>
+                <article><span>Firmware</span><strong>{snapshot.hello?.firmware ?? "—"}</strong><small>{snapshot.hello?.board ?? "Read from device after connection"}</small></article>
+                <article><span>Protocol</span><strong>{snapshot.hello ? `v${snapshot.hello.protocol}` : "—"}</strong><small>TOKKI/1 · newline JSON</small></article>
+                <article><span>Gestures</span><strong>{snapshot.actions.length}</strong><small>{connected ? "All catalog pages loaded" : "Waiting for device catalog"}</small></article>
               </div>
-
-              <div className="activity-strip" role="status">
-                <Radio size={18} /><span>{activity}</span><time>now</time>
-              </div>
-
-              <div className="device-list">
-                <div className="list-heading"><h3>Hardware</h3><span>Initialization state</span></div>
-                {(["oled", "speaker", "led", "neopixel"] as DeviceKind[]).map((device) => {
-                  const Icon = deviceIcons[device];
-                  const implemented = device === "led" || device === "neopixel";
-                  return (
-                    <div className="device-row" key={device}>
-                      <span className={`device-icon ${device}`}><Icon size={18} /></span>
-                      <div>
-                        <strong>{device === "neopixel" ? "NeoPixel" : device.toUpperCase()}</strong>
-                        <small>{implemented ? "Shared component ready" : "Component moved; actions pending"}</small>
-                      </div>
-                      <span className={implemented ? "readiness ready" : "readiness pending"}>
-                        {implemented ? "Ready" : "Pending"}
-                      </span>
-                    </div>
-                  );
-                })}
-              </div>
+              <div className="activity-strip" role="status"><Radio size={18} /><span>{statusText}{snapshot.port ? ` · ${snapshot.port}` : ""}{snapshot.hello && !snapshot.hello.ready ? " · Firmware not ready yet" : ""}</span></div>
+              <p className="help-text">Gestures run serially: one active, up to four waiting. They are finite and cannot be cancelled. Disconnecting does not stop accepted gestures. When the device queue drains, the pet resumes idle behavior.</p>
+              <p className="help-text">Connection readiness covers board, LED, and RGB startup only. OLED and speaker initialize on use; their driver failures are reported in Activity.</p>
+              <button className="connection-button catalog-link" disabled={!connected} onClick={() => setView("gestures")}><Sparkles size={16} /> Browse device gestures</button>
             </section>
           )}
 
           {view === "gestures" && (
             <section aria-labelledby="gestures-heading">
-              <div className="section-heading">
-                <div><h2 id="gestures-heading">Action catalog</h2><p>Stable IDs reported by firmware</p></div>
-                <span className="state-pill"><Radio size={13} /> Mock catalog</span>
-              </div>
-
+              <div className="section-heading"><div><h2 id="gestures-heading">Action catalog</h2><p>Names and stable IDs discovered from your connected pet.</p></div><button className="connection-button" disabled={!connected || busy} onClick={() => void command(() => client.refresh())}><RefreshCw size={16} /> Refresh catalog</button></div>
+              <label className="search-label" htmlFor="gesture-filter">Find a gesture</label>
+              <input id="gesture-filter" type="search" placeholder="Search name, device, or ID" value={filter} onChange={(event) => setFilter(event.target.value)} />
+              <p className="help-text catalog-help">Send queues a real gesture on the pet. No cancellation or automatic retries.</p>
               <div className="action-list">
-                {actions.map((action) => {
-                  const Icon = deviceIcons[action.device];
-                  const running = activeAction === action.id;
-                  return (
-                    <article className="action-row" key={action.id}>
-                      <span className={`device-icon ${action.device}`}><Icon size={19} /></span>
-                      <div className="action-name"><strong>{action.name}</strong><code>{action.id}</code></div>
-                      <span className="action-device">{action.device}</span>
-                      <span className="duration">{action.duration}</span>
-                      <button
-                        className="icon-button"
-                        title={running ? "Action running" : `Preview ${action.name}`}
-                        aria-label={running ? `${action.name} running` : `Preview ${action.name}`}
-                        disabled={running}
-                        onClick={() => previewAction(action)}
-                      >
-                        {running ? <CircleStop size={17} /> : <Play size={17} fill="currentColor" />}
-                      </button>
-                    </article>
-                  );
-                })}
+                {visibleActions.map((action) => (
+                  <article className="action-row" key={action.id}>
+                    <span className="device-icon"><Sparkles size={19} /></span>
+                    <div className="action-name"><strong>{action.name}</strong><code>{action.id}</code></div>
+                    <span className="action-device">{action.device}</span>
+                    <button className="connection-button" title={`Send ${action.name}`} aria-label={`Send ${action.name}`} disabled={!connected || busy || queue.inFlight >= 5} onClick={() => void command(() => client.run(action.id))}><Play size={16} /> Send</button>
+                  </article>
+                ))}
+                {visibleActions.length === 0 && <div className="empty-state">{connecting ? "Fetching all catalog pages…" : connected ? "No gestures match this view." : "Connect on the Device screen to discover gestures."}</div>}
               </div>
             </section>
           )}
 
           {view === "events" && (
-            <section aria-labelledby="events-heading">
-              <div className="section-heading">
-                <div><h2 id="events-heading">Automation rules</h2><p>Stored and evaluated on this PC</p></div>
-                <button className="primary-button" onClick={() => setActivity("New event editor is the next UI slice")}>
-                  <Plus size={17} /> New event
-                </button>
-              </div>
-
-              <article className="rule-row">
-                <span className="rule-icon"><Bell size={19} /></span>
-                <div className="rule-name"><strong>Hydration reminder</strong><small>Every 1 hour</small></div>
-                <div className="rule-action"><code>neopixel.rainbow</code><span>then</span><code>led.blink</code></div>
-                <button
-                  className={ruleEnabled ? "toggle enabled" : "toggle"}
-                  role="switch"
-                  aria-checked={ruleEnabled}
-                  aria-label="Enable hydration reminder"
-                  onClick={() => setRuleEnabled(!ruleEnabled)}
-                ><span /></button>
-                <button className="icon-button" title="Run hydration reminder now" aria-label="Run hydration reminder now" onClick={() => previewAction(actions[1])}>
-                  <Play size={17} fill="currentColor" />
-                </button>
-              </article>
-
-              <div className="integration-row">
-                <span className="rule-icon mail"><Mail size={19} /></span>
-                <div><strong>Manager mail</strong><small>Mock event source</small></div>
-                <span className="readiness pending">Adapter pending</span>
-              </div>
-            </section>
+            <section aria-labelledby="events-heading"><div className="section-heading"><div><h2 id="events-heading">Events are deferred</h2><p>This prototype is manual control only.</p></div></div><div className="empty-state"><Bell size={24} /><h3>No automation is running</h3><p>Scheduling, reminders, email integrations, and event-to-gesture rules are not implemented. Use Gestures to send actions explicitly.</p></div></section>
           )}
+
+          <section className="activity-panel" aria-labelledby="activity-heading">
+            <div className="section-heading"><div><h2 id="activity-heading">Activity</h2><p>{queue.running} running · {queue.queued} queued · {queue.sending} awaiting acceptance</p></div><span className="state-pill">{snapshot.hello?.queueCapacity ?? 4} waiting slots</span></div>
+            <p className="help-text">This app session only; newest first, up to 100 entries. Only firmware events mark completion.</p>
+            {snapshot.activity.length === 0 ? <div className="empty-state">No gestures sent in this app session.</div> : (
+              <ol className="activity-list">
+                {[...snapshot.activity].reverse().map((item) => (
+                  <li key={item.requestId} className={`activity-row ${isInFlight(item.state) ? "in-flight" : ""}`}>
+                    <div className="activity-title"><strong>{item.name}</strong><span className={`activity-state ${item.state}`}>{item.state.replace("_", " ")}</span></div>
+                    <code>{item.actionId} · {item.requestId}</code>
+                    <p>{item.message}</p><time dateTime={new Date(item.updatedAt).toISOString()}>{new Date(item.updatedAt).toLocaleTimeString()}</time>
+                  </li>
+                ))}
+              </ol>
+            )}
+          </section>
         </div>
       </main>
     </div>

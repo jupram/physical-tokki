@@ -38,8 +38,7 @@ const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size
     }
 }
 
-int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
-                            uint32_t phase)
+static int16_t envelope_sample(int32_t raw, unsigned sample_index, unsigned total_frames)
 {
     if (sample_index >= total_frames) {
         return 0;
@@ -56,5 +55,21 @@ int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
             volume = fade_out;
         }
     }
-    return (int16_t) ((int32_t) SINE_TABLE[phase >> 27] * (int32_t) volume / 100);
+    return (int16_t) (raw * (int32_t) volume / 100);
+}
+
+int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
+                            uint32_t phase)
+{
+    return envelope_sample(SINE_TABLE[phase >> 27], sample_index, total_frames);
+}
+
+unsigned speaker_step_frequency(const speaker_tone_step_t *step,
+                                 unsigned sample_index, unsigned total_frames)
+{
+    if (total_frames == 0 || sample_index >= total_frames) {
+        return step->end_hz;
+    }
+    int64_t delta = (int64_t) step->end_hz - step->start_hz;
+    return (unsigned) ((int64_t) step->start_hz + delta * sample_index / total_frames);
 }

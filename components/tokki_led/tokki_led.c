@@ -6,6 +6,8 @@
 #include "tokki_board.h"
 
 static bool s_initialized;
+static bool s_failure_latched;
+static portMUX_TYPE s_lock = portMUX_INITIALIZER_UNLOCKED;
 
 esp_err_t tokki_led_init(void)
 {
@@ -22,20 +24,34 @@ esp_err_t tokki_led_init(void)
         return err;
     }
 
-    err = gpio_set_level(TOKKI_BOARD_STATUS_LED_GPIO, 0);
+    portENTER_CRITICAL(&s_lock);
+    err = gpio_set_level(TOKKI_BOARD_STATUS_LED_GPIO, s_failure_latched ? 1 : 0);
     if (err == ESP_OK) {
         s_initialized = true;
     }
+    portEXIT_CRITICAL(&s_lock);
     return err;
 }
 
 esp_err_t tokki_led_set(bool enabled)
 {
-    if (!s_initialized) {
-        return ESP_ERR_INVALID_STATE;
-    }
+    portENTER_CRITICAL(&s_lock);
+    esp_err_t err = s_initialized
+        ? gpio_set_level(TOKKI_BOARD_STATUS_LED_GPIO, (enabled || s_failure_latched) ? 1 : 0)
+        : ESP_ERR_INVALID_STATE;
+    portEXIT_CRITICAL(&s_lock);
+    return err;
+}
 
-    return gpio_set_level(TOKKI_BOARD_STATUS_LED_GPIO, enabled ? 1 : 0);
+esp_err_t tokki_led_latch_failure(void)
+{
+    portENTER_CRITICAL(&s_lock);
+    s_failure_latched = true;
+    esp_err_t err = s_initialized
+        ? gpio_set_level(TOKKI_BOARD_STATUS_LED_GPIO, 1)
+        : ESP_ERR_INVALID_STATE;
+    portEXIT_CRITICAL(&s_lock);
+    return err;
 }
 
 esp_err_t tokki_led_blink(uint32_t count,

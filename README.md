@@ -14,9 +14,11 @@ components/tokki_neopixel/    RGB color and rainbow effects
 components/tokki_oled/        OLED eye renderer
 components/tokki_speaker/     I2S speaker code and embedded audio
 components/tokki_gestures/    Discoverable actions grouped by device
+components/tokki_runtime/     Serial protocol, action queue, and idle eyes
 main/                         Production firmware
 self_test/                    Standalone hardware self-test firmware
 protocol/                     PC-to-pet serial protocol
+pc-app/                       Tauri desktop app for discovery/manual playback
 docs/                         Architecture documentation
 ```
 
@@ -24,9 +26,29 @@ See [the architecture](docs/architecture.md), [gesture contribution guide](compo
 
 ## Production firmware
 
-The root ESP-IDF application initializes the shared board, LED, and NeoPixel
-components and reports the registered action catalog. USB serial command
-handling is the next implementation step.
+The root ESP-IDF application initializes the shared board, LED, and NeoPixel,
+serves the gesture registry over USB serial, and accepts manual playback
+commands from the desktop app. A single worker executes gestures in order,
+with four queue slots behind the current action. While idle, the OLED loops
+through blinking, side glances, and curious eyes. Incoming gestures take
+priority at the next idle-frame boundary; the idle loop resumes after the
+queue drains. OLED and speaker hardware are initialized on first use.
+
+Manually triggered OLED, status LED, and RGB gestures now run 50% longer
+than the initial prototype, with unchanged frame counts, brightness, and
+final states. Idle eyes, speaker sounds, and self-test timings are unchanged.
+See the [gesture duration table](components/tokki_gestures/README.md#current-actions).
+
+The onboard **red status LED (GPIO13)** latches on after a startup failure,
+a failed gesture/idle hardware operation (including lazy OLED/speaker
+initialization), or a detected firmware serial I/O failure. It stays on until
+the pet resets, even if a later retry succeeds. Fault indication takes priority
+over `led.blink`: that action still completes its timing but cannot turn the
+LED off while a fault is latched. Healthy startup leaves it off.
+The RGB NeoPixel remains available for gestures and is not the fault indicator.
+If the status LED's own initialization or GPIO writes fail, illumination cannot
+be guaranteed; that failure is logged. Invalid PC requests or a PC-side
+COM-port access error do not latch a firmware hardware fault.
 
 From an exported ESP-IDF shell:
 
@@ -34,6 +56,50 @@ From an exported ESP-IDF shell:
 idf.py build
 idf.py flash monitor
 ```
+
+## End-to-end prototype
+
+1. Connect the Feather V2 over USB, with peripherals wired as described below.
+2. Build and flash the **root production application**, not `self_test/`.
+3. Stop the ESP-IDF monitor so the desktop app can open the serial port.
+4. Start the [native desktop app](pc-app/README.md) with
+   `npm run tauri dev` from `pc-app/`.
+5. Select the Feather's COM port and connect. The app handshakes with the
+   firmware and automatically fetches every page of its registered gestures.
+6. Use the Gestures screen to send individual actions. Acceptance, running,
+   completion, and failures come from the physical device, not UI timers.
+   Additional actions queue in order; a full queue reports Busy.
+7. Let the queue finish or disconnect the app: the pet returns to idle eyes.
+   Disconnect does not cancel gestures already accepted by the firmware.
+
+Serial uses 115200 baud, 8N1, with no flow control. Discovery means reading
+gesture descriptors from the selected pet, not probing every COM device.
+No event-to-gesture rules, email integration, arbitrary text, cancellation,
+Wi-Fi, or Bluetooth are implemented in this prototype.
+
+The catalog describes firmware capabilities, not verified peripheral
+presence. A missing OLED produces a visible idle/gesture error and retries
+idle drawing every five seconds; other gestures remain usable. Software
+timing and host tests do not replace hardware checks.
+
+### Prototype validation
+
+After building production firmware once to restore its managed cJSON
+dependency, run:
+
+```powershell
+.\tests\host\run.ps1 -Runtime
+Set-Location .\pc-app
+npm run build
+cargo test --manifest-path .\src-tauri\Cargo.toml
+```
+
+The host suite covers all 31 gestures, including the twice-repeated bark recording, and additionally checks
+protocol framing, complete paginated discovery, bounded FIFO execution,
+lifecycle events, malformed input recovery, and one-frame idle rendering.
+The UART/FreeRTOS adapter and actual peripherals still need an on-device
+smoke test: send several gestures while idle, fill the queue, unplug/reconnect
+the PC, and verify idle resumes without concurrent OLED writes.
 
 ## Hardware self-test
 
