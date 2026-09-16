@@ -6,6 +6,8 @@
 /self_test/sdkconfig
 /self_test/sdkconfig.old
 /.espressif/
+/managed_components/
+/self_test/managed_components/
 
 # Machine-specific VS Code paths and serial-port settings
 /.vscode/

@@ -1,8 +1,14 @@
-param([string] $PreviewPath)
+param([string] $PreviewPath, [switch] $Runtime, [string] $WireFixturePath, [string] $BarkPreviewPath)
 
 $ErrorActionPreference = 'Stop'
 $repo = (Resolve-Path "$PSScriptRoot/../..").Path
+$barkAsset = Join-Path $repo 'components\tokki_speaker\audio\dog_bark.wav'
 if ($PreviewPath) { $PreviewPath = [System.IO.Path]::GetFullPath($PreviewPath) }
+if ($BarkPreviewPath) { $BarkPreviewPath = [System.IO.Path]::GetFullPath($BarkPreviewPath) }
+if ($WireFixturePath) {
+    $WireFixturePath = [System.IO.Path]::GetFullPath($WireFixturePath)
+    $Runtime = $true
+}
 
 if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
     $vswhere = "${env:ProgramFiles(x86)}/Microsoft Visual Studio/Installer/vswhere.exe"
@@ -22,6 +28,7 @@ $sources = @(
     "$repo/components/tokki_gestures/tokki_gestures.c"
     "$repo/components/tokki_gestures/src/led/led_actions.c"
     "$repo/components/tokki_gestures/src/neopixel/neopixel_actions.c"
+    "$repo/components/tokki_neopixel/neopixel_effects.c"
     "$repo/components/tokki_gestures/src/oled/oled_actions.c"
     "$repo/components/tokki_oled/pet_eyes.c"
     "$repo/components/tokki_oled/oled_art.c"
@@ -42,11 +49,49 @@ try {
     & cl.exe /nologo /TC /std:c11 /W4 /WX @includes @sources /Fetokki-host.exe
     if ($LASTEXITCODE -ne 0) { throw 'Host test compilation failed.' }
     if ($PreviewPath) {
-        & ./tokki-host.exe $PreviewPath
+        & ./tokki-host.exe $barkAsset $PreviewPath
     } else {
-        & ./tokki-host.exe
+        & ./tokki-host.exe $barkAsset
     }
     if ($LASTEXITCODE -ne 0) { throw 'Host tests failed.' }
+    if ($BarkPreviewPath) {
+        & .\tokki-host.exe $barkAsset --bark-wav $BarkPreviewPath
+        if ($LASTEXITCODE -ne 0) { throw 'Bark WAV export failed.' }
+    }
+    $boardInclude = "/I$repo\components\tokki_board\include"
+    $runtimeInclude = "/I$repo\components\tokki_runtime\include"
+    & cl.exe /nologo /TC /std:c11 /W4 /WX @includes $boardInclude "$PSScriptRoot\test_led.c" "$repo\components\tokki_led\tokki_led.c" /Fetokki-led.exe
+    if ($LASTEXITCODE -ne 0) { throw 'LED host test compilation failed.' }
+    & .\tokki-led.exe
+    if ($LASTEXITCODE -ne 0) { throw 'LED latch tests failed.' }
+    & .\tokki-led.exe --early-failure
+    if ($LASTEXITCODE -ne 0) { throw 'LED initialization retry tests failed.' }
+    & cl.exe /nologo /TC /std:c11 /W4 /WX @includes $boardInclude $runtimeInclude "$PSScriptRoot\test_startup.c" "$repo\main\app_main.c" /Fetokki-startup.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Startup host test compilation failed.' }
+    & .\tokki-startup.exe
+    if ($LASTEXITCODE -ne 0) { throw 'Startup failure indicator tests failed.' }
+    if ($Runtime) {
+        $cjson = Join-Path $repo 'managed_components\espressif__cjson\cJSON'
+        if (-not (Test-Path (Join-Path $cjson 'cJSON.c'))) {
+            throw 'Build production firmware once with ESP-IDF to restore the managed cJSON dependency, then rerun -Runtime.'
+        }
+        & cl.exe /nologo /TC /std:c11 /W3 "/I$cjson" "$cjson\cJSON.c" /c /Focjson.obj
+        if ($LASTEXITCODE -ne 0) { throw 'cJSON host compilation failed.' }
+        $runtimeSources = @(
+            "$PSScriptRoot\test_runtime.c"
+            "$repo\components\tokki_runtime\tokki_protocol.c"
+            "$repo\components\tokki_runtime\tokki_idle.c"
+        ) + $sources[1..($sources.Length - 1)]
+        & cl.exe /nologo /TC /std:c11 /W4 /WX @includes "/I$cjson" "/I$repo\components\tokki_runtime\include" @runtimeSources /Fetokki-runtime.exe /link cjson.obj
+        if ($LASTEXITCODE -ne 0) { throw 'Runtime host test compilation failed.' }
+        & .\tokki-runtime.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Runtime host tests failed.' }
+        if ($WireFixturePath) {
+            $frames = & .\tokki-runtime.exe --wire-fixture
+            if ($LASTEXITCODE -ne 0) { throw 'Protocol fixture export failed.' }
+            [System.IO.File]::WriteAllLines($WireFixturePath, [string[]] $frames, [System.Text.UTF8Encoding]::new($false))
+        }
+    }
 } finally {
     Pop-Location
     Remove-Item $build -Recurse -Force
@@ -100,4 +145,5 @@ try {
 }
 
 Test-SpeakerWav "$repo/components/tokki_speaker/audio/drink_water.wav"
-Test-SpeakerWav "$repo/components/tokki_speaker/audio/dog_bark.wav" -expectedSamples 8000
+Test-SpeakerWav "$repo/components/tokki_speaker/audio/dog_bark.wav" -expectedSamples 8318
+Test-SpeakerWav "$repo/components/tokki_speaker/audio/dog_bark_cc0.wav" -expectedSamples 8000

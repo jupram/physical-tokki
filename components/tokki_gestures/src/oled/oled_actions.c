@@ -5,6 +5,8 @@
 #include "pet_eyes.h"
 #include "tokki_oled.h"
 
+#define OLED_GESTURE_FRAME_MS 90
+
 static esp_err_t animate_eyes(pet_eye_expression_t expression,
                               unsigned first_frame, unsigned frame_count)
 {
@@ -18,7 +20,7 @@ static esp_err_t animate_eyes(pet_eye_expression_t expression,
         if (err != ESP_OK) {
             return err;
         }
-        vTaskDelay(pdMS_TO_TICKS(60));
+        vTaskDelay(pdMS_TO_TICKS(OLED_GESTURE_FRAME_MS));
     }
     return ESP_OK;
 }
@@ -102,37 +104,37 @@ static esp_err_t animate_art(tokki_oled_art_t art, unsigned frame_count, unsigne
 
 static esp_err_t run_drink_water(void)
 {
-    return animate_art(TOKKI_OLED_ART_DRINK_WATER, 1, 2000);
+    return animate_art(TOKKI_OLED_ART_DRINK_WATER, 1, 3000);
 }
 
 static esp_err_t run_water_drop(void)
 {
-    return animate_art(TOKKI_OLED_ART_WATER_DROP, 24, 60);
+    return animate_art(TOKKI_OLED_ART_WATER_DROP, 24, OLED_GESTURE_FRAME_MS);
 }
 
 static esp_err_t run_fire(void)
 {
-    return animate_art(TOKKI_OLED_ART_FIRE, 24, 60);
+    return animate_art(TOKKI_OLED_ART_FIRE, 24, OLED_GESTURE_FRAME_MS);
 }
 
 static esp_err_t run_checkmark(void)
 {
-    return animate_art(TOKKI_OLED_ART_CHECKMARK, 17, 60);
+    return animate_art(TOKKI_OLED_ART_CHECKMARK, 17, OLED_GESTURE_FRAME_MS);
 }
 
 static esp_err_t run_thinking(void)
 {
-    return animate_art(TOKKI_OLED_ART_THINKING, 20, 60);
+    return animate_art(TOKKI_OLED_ART_THINKING, 20, OLED_GESTURE_FRAME_MS);
 }
 
 static esp_err_t run_heart(void)
 {
-    return animate_art(TOKKI_OLED_ART_HEART, 24, 60);
+    return animate_art(TOKKI_OLED_ART_HEART, 24, OLED_GESTURE_FRAME_MS);
 }
 
 static esp_err_t run_exclamation(void)
 {
-    return animate_art(TOKKI_OLED_ART_EXCLAMATION, 17, 60);
+    return animate_art(TOKKI_OLED_ART_EXCLAMATION, 17, OLED_GESTURE_FRAME_MS);
 }
 
 const tokki_action_descriptor_t TOKKI_OLED_HAPPY_ACTION = {

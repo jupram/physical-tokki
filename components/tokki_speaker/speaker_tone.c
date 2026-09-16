@@ -78,21 +78,7 @@ const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size
     }
 }
 
-unsigned speaker_tone_frequency(unsigned start_hz, unsigned end_hz,
-                                  unsigned sample_index, unsigned total_frames)
-{
-    if (total_frames == 0) {
-        return start_hz;
-    }
-    if (sample_index >= total_frames) {
-        return end_hz;
-    }
-    int64_t delta = (int64_t) end_hz - start_hz;
-    return (unsigned) ((int64_t) start_hz + delta * sample_index / total_frames);
-}
-
-int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
-                            uint32_t phase)
+static int16_t envelope_sample(int32_t raw, unsigned sample_index, unsigned total_frames)
 {
     if (sample_index >= total_frames) {
         return 0;
@@ -109,7 +95,13 @@ int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
             volume = fade_out;
         }
     }
-    return (int16_t) ((int32_t) SINE_TABLE[phase >> 27] * (int32_t) volume / 100);
+    return (int16_t) (raw * (int32_t) volume / 100);
+}
+
+int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
+                            uint32_t phase)
+{
+    return envelope_sample(SINE_TABLE[phase >> 27], sample_index, total_frames);
 }
 
 int16_t speaker_tone_scaled_sample(unsigned sample_index, unsigned total_frames,
@@ -118,4 +110,14 @@ int16_t speaker_tone_scaled_sample(unsigned sample_index, unsigned total_frames,
     unsigned gain = gain_percent > 100 ? 100 : gain_percent;
     int16_t sample = speaker_tone_sample(sample_index, total_frames, phase);
     return (int16_t) ((int32_t) sample * (int32_t) gain / 100);
+}
+
+unsigned speaker_step_frequency(const speaker_tone_step_t *step,
+                                 unsigned sample_index, unsigned total_frames)
+{
+    if (total_frames == 0 || sample_index >= total_frames) {
+        return step->end_hz;
+    }
+    int64_t delta = (int64_t) step->end_hz - step->start_hz;
+    return (unsigned) ((int64_t) step->start_hz + delta * sample_index / total_frames);
 }

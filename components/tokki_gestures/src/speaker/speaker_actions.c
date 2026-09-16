@@ -82,6 +82,11 @@ static esp_err_t run_sonar(void)
     return tokki_speaker_play(TOKKI_SPEAKER_SONAR);
 }
 
+static esp_err_t run_dog_bark(void)
+{
+    return tokki_speaker_play(TOKKI_SPEAKER_DOG_BARK);
+}
+
 const tokki_action_descriptor_t TOKKI_SPEAKER_DRINK_WATER_ACTION = {
     .id = "speaker.drink_water", .display_name = "Drink water phrase",
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_drink_water,
@@ -138,7 +143,7 @@ const tokki_action_descriptor_t TOKKI_SPEAKER_TRILL_ACTION = {
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_trill,
 };
 const tokki_action_descriptor_t TOKKI_SPEAKER_BARK_ACTION = {
-    .id = "speaker.bark", .display_name = "Dog bark (recording)",
+    .id = "speaker.bark", .display_name = "Dog bark (CC0 recording, once)",
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_bark,
 };
 
@@ -149,4 +154,9 @@ const tokki_action_descriptor_t TOKKI_SPEAKER_KNOCK_ACTION = {
 const tokki_action_descriptor_t TOKKI_SPEAKER_SONAR_ACTION = {
     .id = "speaker.sonar", .display_name = "Sonar echo (synthesized)",
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_sonar,
+};
+
+const tokki_action_descriptor_t TOKKI_SPEAKER_DOG_BARK_ACTION = {
+    .id = "speaker.dog_bark", .display_name = "Dog bark (recording, twice)",
+    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_dog_bark,
 };

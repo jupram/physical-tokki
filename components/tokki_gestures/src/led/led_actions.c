@@ -4,7 +4,7 @@
 
 static esp_err_t run_led_blink(void)
 {
-    return tokki_led_blink(3, 200, 200);
+    return tokki_led_blink(3, 300, 300);
 }
 
 const tokki_action_descriptor_t TOKKI_LED_BLINK_ACTION = {

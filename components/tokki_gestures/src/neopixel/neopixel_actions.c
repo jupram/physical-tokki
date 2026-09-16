@@ -11,12 +11,12 @@ static esp_err_t blink_color(uint8_t red, uint8_t green, uint8_t blue)
         if (err != ESP_OK) {
             return err;
         }
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(300));
         err = tokki_neopixel_set_color(0, 0, 0);
         if (err != ESP_OK) {
             return err;
         }
-        vTaskDelay(pdMS_TO_TICKS(200));
+        vTaskDelay(pdMS_TO_TICKS(300));
     }
     return ESP_OK;
 }
@@ -45,7 +45,7 @@ static esp_err_t fade_color(bool teal, unsigned half_steps)
         if (err != ESP_OK) {
             return err;
         }
-        vTaskDelay(pdMS_TO_TICKS(40));
+        vTaskDelay(pdMS_TO_TICKS(60));
     }
     return ESP_OK;
 }
@@ -62,7 +62,7 @@ static esp_err_t run_neopixel_pulse_blue(void)
 
 static esp_err_t run_neopixel_rainbow(void)
 {
-    esp_err_t err = tokki_neopixel_rainbow(1);
+    esp_err_t err = tokki_neopixel_rainbow_timed(1, 30);
     if (err != ESP_OK) {
         return err;
     }

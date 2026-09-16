@@ -19,11 +19,11 @@ typedef struct {
 
 const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size_t *count);
 
-unsigned speaker_tone_frequency(unsigned start_hz, unsigned end_hz,
-                                  unsigned sample_index, unsigned total_frames);
-
 int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
                             uint32_t phase);
 
 int16_t speaker_tone_scaled_sample(unsigned sample_index, unsigned total_frames,
                                    uint32_t phase, unsigned gain_percent);
+
+unsigned speaker_step_frequency(const speaker_tone_step_t *step,
+                                 unsigned sample_index, unsigned total_frames);

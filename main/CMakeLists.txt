@@ -5,4 +5,5 @@ idf_component_register(
         tokki_gestures
         tokki_led
         tokki_neopixel
+        tokki_runtime
 )
