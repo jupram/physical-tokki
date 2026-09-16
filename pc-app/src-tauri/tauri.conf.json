@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "pc-app",
+  "productName": "Physical Tokki",
   "version": "0.1.0",
   "identifier": "com.physicaltokki.app",
   "build": {
@@ -12,9 +12,11 @@
   "app": {
     "windows": [
       {
-        "title": "pc-app",
-        "width": 800,
-        "height": 600
+        "title": "Physical Tokki",
+        "width": 1100,
+        "height": 800,
+        "minWidth": 640,
+        "minHeight": 480
       }
     ],
     "security": {

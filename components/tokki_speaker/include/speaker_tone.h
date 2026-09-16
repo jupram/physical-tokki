@@ -20,3 +20,5 @@ const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size
 
 int16_t speaker_tone_sample(unsigned sample_index, unsigned total_frames,
                             uint32_t phase);
+unsigned speaker_step_frequency(const speaker_tone_step_t *step,
+                                 unsigned sample_index, unsigned total_frames);

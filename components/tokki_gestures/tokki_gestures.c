@@ -38,6 +38,7 @@ static const tokki_action_descriptor_t *const ACTIONS[] = {
     &TOKKI_SPEAKER_ALERT_ACTION,
     &TOKKI_SPEAKER_CHIME_ACTION,
     &TOKKI_SPEAKER_PING_ACTION,
+    &TOKKI_SPEAKER_DOG_BARK_ACTION,
 };
 
 size_t tokki_action_count(void)

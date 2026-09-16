@@ -3,14 +3,21 @@
 
 #include "esp_err.h"
 #include "esp_log.h"
-#include "freertos/FreeRTOS.h"
-#include "freertos/task.h"
 #include "tokki_board.h"
 #include "tokki_gestures.h"
 #include "tokki_led.h"
 #include "tokki_neopixel.h"
+#include "tokki_runtime.h"
 
 static const char *TAG = "physical_tokki";
+
+static void indicate_failure(void)
+{
+    esp_err_t result = tokki_led_latch_failure();
+    if (result != ESP_OK) {
+        ESP_LOGE(TAG, "Cannot light failure LED: %s", esp_err_to_name(result));
+    }
+}
 
 static bool initialize_device(const char *name, esp_err_t result)
 {
@@ -45,9 +52,13 @@ void app_main(void)
     ready &= initialize_device("NeoPixel", tokki_neopixel_init());
 
     log_action_catalog();
-    tokki_neopixel_set_color(ready ? 0 : 16, ready ? 16 : 0, 0);
-
-    while (true) {
-        tokki_led_blink(1, 100, 1900);
+    ready &= initialize_device("Ready indicator", tokki_neopixel_set_color(0, 0, 0));
+    if (!ready) {
+        indicate_failure();
+    }
+    esp_err_t result = tokki_runtime_start(ready);
+    if (result != ESP_OK) {
+        indicate_failure();
+        ESP_LOGE(TAG, "Serial/idle runtime failed to start: %s", esp_err_to_name(result));
     }
 }

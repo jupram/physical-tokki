@@ -27,6 +27,11 @@ static esp_err_t run_ping(void)
     return tokki_speaker_play(TOKKI_SPEAKER_PING);
 }
 
+static esp_err_t run_dog_bark(void)
+{
+    return tokki_speaker_play(TOKKI_SPEAKER_DOG_BARK);
+}
+
 const tokki_action_descriptor_t TOKKI_SPEAKER_DRINK_WATER_ACTION = {
     .id = "speaker.drink_water", .display_name = "Drink water phrase",
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_drink_water,
@@ -47,4 +52,8 @@ const tokki_action_descriptor_t TOKKI_SPEAKER_CHIME_ACTION = {
 const tokki_action_descriptor_t TOKKI_SPEAKER_PING_ACTION = {
     .id = "speaker.ping", .display_name = "Short ping",
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_ping,
+};
+const tokki_action_descriptor_t TOKKI_SPEAKER_DOG_BARK_ACTION = {
+    .id = "speaker.dog_bark", .display_name = "Dog bark (recording, twice)",
+    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_dog_bark,
 };

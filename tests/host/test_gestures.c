@@ -14,8 +14,7 @@
 static unsigned color_calls;
 static unsigned fail_color_call;
 static unsigned elapsed_ms;
-static uint8_t colors[64][3];
-static esp_err_t rainbow_result;
+static uint8_t colors[129][3];
 static unsigned oled_calls;
 static unsigned fail_oled_call;
 static uint8_t last_frame[TOKKI_OLED_FRAME_SIZE];
@@ -24,6 +23,7 @@ static esp_err_t speaker_result;
 static FILE *preview_output;
 static bool record_preview;
 static unsigned preview_actions;
+static uint8_t bark_pcm[16636];
 
 static void begin_preview(const char *id, unsigned duration, const char *kind)
 {
@@ -81,7 +81,7 @@ void vTaskDelay(TickType_t ticks)
 
 esp_err_t tokki_neopixel_set_color(uint8_t red, uint8_t green, uint8_t blue)
 {
-    assert(color_calls < 64);
+    assert(color_calls < 129);
     colors[color_calls][0] = red;
     colors[color_calls][1] = green;
     colors[color_calls][2] = blue;
@@ -89,15 +89,10 @@ esp_err_t tokki_neopixel_set_color(uint8_t red, uint8_t green, uint8_t blue)
     return color_calls == fail_color_call ? ESP_FAIL : ESP_OK;
 }
 
-esp_err_t tokki_neopixel_rainbow(uint32_t cycles)
-{
-    assert(cycles == 1);
-    return rainbow_result;
-}
-
 esp_err_t tokki_led_blink(uint32_t count, uint32_t on_ms, uint32_t off_ms)
 {
-    assert(count == 3 && on_ms == 200 && off_ms == 200);
+    assert(count == 3 && on_ms == 300 && off_ms == 300);
+    elapsed_ms += count * (on_ms + off_ms);
     return ESP_OK;
 }
 
@@ -106,7 +101,6 @@ static void reset_output(void)
     color_calls = 0;
     fail_color_call = 0;
     elapsed_ms = 0;
-    rainbow_result = ESP_OK;
     oled_calls = 0;
     fail_oled_call = 0;
     memset(colors, 0, sizeof(colors));
@@ -116,19 +110,19 @@ static void test_blink(const char *id, uint8_t red, uint8_t green)
 {
     reset_output();
     assert(tokki_action_run(id) == ESP_OK);
-    assert(color_calls == 6 && elapsed_ms == 1200);
+    assert(color_calls == 6 && elapsed_ms == 1800);
     for (unsigned index = 0; index < 6; ++index) {
         assert(colors[index][0] == (index % 2 == 0 ? red : 0));
         assert(colors[index][1] == (index % 2 == 0 ? green : 0));
         assert(colors[index][2] == 0);
     }
-    export_colors(id, 200);
+    export_colors(id, 300);
     for (unsigned failure = 1; failure <= 6; ++failure) {
         reset_output();
         fail_color_call = failure;
         assert(tokki_action_run(id) == ESP_FAIL);
         assert(color_calls == failure);
-        assert(elapsed_ms == (failure - 1) * 200);
+        assert(elapsed_ms == (failure - 1) * 300);
     }
 }
 
@@ -137,7 +131,7 @@ static void test_fade(const char *id, unsigned half_steps, bool teal)
     unsigned count = half_steps * 2 + 1;
     reset_output();
     assert(tokki_action_run(id) == ESP_OK);
-    assert(color_calls == count && elapsed_ms == count * 40);
+    assert(color_calls == count && elapsed_ms == count * 60);
     for (unsigned index = 0; index < count; ++index) {
         unsigned distance = index <= half_steps ? index : half_steps * 2 - index;
         unsigned brightness = 32 * distance / half_steps;
@@ -145,17 +139,47 @@ static void test_fade(const char *id, unsigned half_steps, bool teal)
         assert(colors[index][1] == (teal ? brightness : 0));
         assert(colors[index][2] == brightness);
     }
-    export_colors(id, 40);
+    export_colors(id, 60);
     for (unsigned failure = 1; failure <= count; ++failure) {
         reset_output();
         fail_color_call = failure;
         assert(tokki_action_run(id) == ESP_FAIL);
-        assert(color_calls == failure && elapsed_ms == (failure - 1) * 40);
+        assert(color_calls == failure && elapsed_ms == (failure - 1) * 60);
     }
 }
 
-static void test_oled(const char *id, unsigned frames, unsigned duration)
+static void test_rainbow(void)
 {
+    uint8_t original_colors[128][3];
+    reset_output();
+    assert(tokki_neopixel_rainbow(1) == ESP_OK);
+    assert(color_calls == 128 && elapsed_ms == 2560);
+    memcpy(original_colors, colors, sizeof(original_colors));
+    reset_output();
+    assert(tokki_action_run("neopixel.rainbow") == ESP_OK);
+    assert(color_calls == 129 && elapsed_ms == 3840);
+    assert(memcmp(original_colors, colors, sizeof(original_colors)) == 0);
+    assert(colors[128][0] == 0 && colors[128][1] == 0 && colors[128][2] == 0);
+    for (unsigned index = 0; index < color_calls; ++index) {
+        for (unsigned channel = 0; channel < 3; ++channel) {
+            assert(colors[index][channel] <= 32);
+        }
+    }
+    for (unsigned failure = 1; failure <= 129; ++failure) {
+        reset_output();
+        fail_color_call = failure;
+        assert(tokki_action_run("neopixel.rainbow") == ESP_FAIL);
+        assert(color_calls == failure && elapsed_ms == (failure - 1) * 30);
+    }
+    reset_output();
+    assert(tokki_neopixel_rainbow_timed(1, 0) == ESP_ERR_INVALID_ARG);
+    assert(tokki_neopixel_rainbow_timed(1, 1001) == ESP_ERR_INVALID_ARG);
+    assert(color_calls == 0 && elapsed_ms == 0);
+}
+
+static void test_oled(const char *id, unsigned frames, unsigned original_duration)
+{
+    unsigned duration = original_duration * 3 / 2;
     reset_output();
     if (preview_output != NULL) {
         begin_preview(id, duration, "oled");
@@ -288,8 +312,7 @@ static void export_tone(const char *id, tokki_speaker_sound_t sound)
         uint32_t phase = 0;
         unsigned frames = SPEAKER_SAMPLE_RATE_HZ * steps[index].duration_ms / 1000;
         for (unsigned frame = 0; frame < frames; ++frame) {
-            unsigned frequency = steps[index].start_hz +
-                (steps[index].end_hz - steps[index].start_hz) * frame / frames;
+            unsigned frequency = speaker_step_frequency(&steps[index], frame, frames);
             int16_t sample = speaker_tone_sample(frame, frames, phase);
             assert(sample >= -6553 && sample <= 6553);
             fprintf(preview_output, "%02x%02x", (unsigned) ((uint16_t) sample & 255),
@@ -308,12 +331,12 @@ static void export_tone(const char *id, tokki_speaker_sound_t sound)
 
 static void test_speaker(void)
 {
-    const char *ids[] = {"speaker.drink_water", "speaker.chirp", "speaker.alert", "speaker.chime", "speaker.ping"};
+    const char *ids[] = {"speaker.drink_water", "speaker.chirp", "speaker.alert", "speaker.chime", "speaker.ping", "speaker.dog_bark"};
     for (size_t index = 0; index < sizeof(ids) / sizeof(ids[0]); ++index) {
         speaker_result = ESP_OK;
         assert(tokki_action_run(ids[index]) == ESP_OK);
         assert(last_sound == (tokki_speaker_sound_t) index);
-        if (index > 0) {
+        if (index > 0 && index < TOKKI_SPEAKER_DOG_BARK) {
             export_tone(ids[index], (tokki_speaker_sound_t) index);
         }
         speaker_result = ESP_FAIL;
@@ -322,6 +345,7 @@ static void test_speaker(void)
     size_t step_count = 99;
     assert(speaker_sound_steps(TOKKI_SPEAKER_CHIME, NULL) == NULL);
     assert(speaker_sound_steps((tokki_speaker_sound_t) 99, &step_count) == NULL && step_count == 0);
+    assert(speaker_sound_steps(TOKKI_SPEAKER_DOG_BARK, &step_count) == NULL && step_count == 0);
     const unsigned expected_duration[] = {0, 320, 180, 460, 100};
     for (int sound = TOKKI_SPEAKER_CHIRP; sound <= TOKKI_SPEAKER_PING; ++sound) {
         const speaker_tone_step_t *steps = speaker_sound_steps((tokki_speaker_sound_t) sound, &step_count);
@@ -329,6 +353,7 @@ static void test_speaker(void)
         unsigned duration = 0;
         for (size_t index = 0; index < step_count; ++index) {
             assert(steps[index].start_hz > 0 && steps[index].end_hz < SPEAKER_SAMPLE_RATE_HZ / 2);
+            assert(steps[index].start_hz < SPEAKER_SAMPLE_RATE_HZ / 2 && steps[index].end_hz > 0);
             assert(steps[index].end_hz >= steps[index].start_hz);
             duration += steps[index].duration_ms + steps[index].silence_ms;
             unsigned frames = SPEAKER_SAMPLE_RATE_HZ * steps[index].duration_ms / 1000;
@@ -365,13 +390,110 @@ static void test_speaker(void)
     }
 }
 
+static uint32_t wav_read_u32(const uint8_t *value)
+{
+    return (uint32_t) value[0] | ((uint32_t) value[1] << 8) |
+           ((uint32_t) value[2] << 16) | ((uint32_t) value[3] << 24);
+}
+
+static int16_t bark_sample(size_t index)
+{
+    int16_t raw = (int16_t) ((uint16_t) bark_pcm[index * 2] |
+                             ((uint16_t) bark_pcm[index * 2 + 1] << 8));
+    return (int16_t) ((int32_t) raw * SPEAKER_MAX_VOLUME_PERCENT / 100);
+}
+
+static void load_bark(const char *path)
+{
+    FILE *file = NULL;
+    assert(fopen_s(&file, path, "rb") == 0);
+    uint8_t header[44];
+    assert(fread(header, 1, sizeof(header), file) == sizeof(header));
+    assert(memcmp(header, "RIFF", 4) == 0 && memcmp(header + 8, "WAVEfmt ", 8) == 0);
+    assert(wav_read_u32(header + 4) == sizeof(bark_pcm) + 36);
+    assert(wav_read_u32(header + 16) == 16);
+    assert(header[20] == 1 && header[21] == 0 && header[22] == 1 && header[23] == 0);
+    assert(wav_read_u32(header + 24) == SPEAKER_SAMPLE_RATE_HZ);
+    assert(wav_read_u32(header + 28) == SPEAKER_SAMPLE_RATE_HZ * 2);
+    assert(header[32] == 2 && header[33] == 0 && header[34] == 16 && header[35] == 0);
+    assert(memcmp(header + 36, "data", 4) == 0);
+    assert(wav_read_u32(header + 40) == sizeof(bark_pcm));
+    assert(fread(bark_pcm, 1, sizeof(bark_pcm), file) == sizeof(bark_pcm));
+    assert(fgetc(file) == EOF);
+    assert(fclose(file) == 0);
+}
+
+static void test_bark(void)
+{
+    assert(strstr(tokki_action_find("speaker.dog_bark")->display_name, "recording") != NULL);
+    assert(memcmp(bark_pcm, bark_pcm + sizeof(bark_pcm) / 2, sizeof(bark_pcm) / 2) == 0);
+    unsigned nonzero = 0;
+    for (size_t index = 0; index < sizeof(bark_pcm) / 2; ++index) {
+        int16_t sample = bark_sample(index);
+        assert(sample >= -6553 && sample <= 6553);
+        nonzero += sample != 0;
+    }
+    assert(nonzero > 0);
+    puts("PASS: recorded bark PCM16/16kHz/mono, exactly two identical repeats, volume ceiling");
+}
+
+static void wav_u16(FILE *file, uint16_t value)
+{
+    assert(fputc(value & 255, file) != EOF);
+    assert(fputc(value >> 8, file) != EOF);
+}
+
+static void wav_u32(FILE *file, uint32_t value)
+{
+    wav_u16(file, (uint16_t) value);
+    wav_u16(file, (uint16_t) (value >> 16));
+}
+
+static void export_bark_wav(const char *path)
+{
+    uint32_t data_size = (uint32_t) sizeof(bark_pcm) + SPEAKER_SAMPLE_RATE_HZ;
+    FILE *file = NULL;
+    assert(fopen_s(&file, path, "wb") == 0);
+    assert(fwrite("RIFF", 1, 4, file) == 4);
+    wav_u32(file, data_size + 36);
+    assert(fwrite("WAVEfmt ", 1, 8, file) == 8);
+    wav_u32(file, 16);
+    wav_u16(file, 1);
+    wav_u16(file, 1);
+    wav_u32(file, SPEAKER_SAMPLE_RATE_HZ);
+    wav_u32(file, SPEAKER_SAMPLE_RATE_HZ * 2);
+    wav_u16(file, 2);
+    wav_u16(file, 16);
+    assert(fwrite("data", 1, 4, file) == 4);
+    wav_u32(file, data_size);
+    for (unsigned frame = 0; frame < SPEAKER_SAMPLE_RATE_HZ / 4; ++frame) {
+        wav_u16(file, 0);
+    }
+    for (size_t index = 0; index < sizeof(bark_pcm) / 2; ++index) {
+        wav_u16(file, (uint16_t) bark_sample(index));
+    }
+    for (unsigned frame = 0; frame < SPEAKER_SAMPLE_RATE_HZ / 4; ++frame) {
+        wav_u16(file, 0);
+    }
+    assert(ftell(file) == (long) data_size + 44);
+    assert(fclose(file) == 0);
+    printf("PASS: exported recorded bark with firmware volume and padding: %s\n", path);
+}
+
 int main(int argc, char **argv)
 {
-    if (argc == 2) {
-        assert(fopen_s(&preview_output, argv[1], "w") == 0);
+    assert(argc >= 2);
+    load_bark(argv[1]);
+    if (argc == 4 && strcmp(argv[2], "--bark-wav") == 0) {
+        test_bark();
+        export_bark_wav(argv[3]);
+        return 0;
+    }
+    if (argc == 3) {
+        assert(fopen_s(&preview_output, argv[2], "w") == 0);
         fputs("window.TOKKI_PREVIEW = {\n", preview_output);
     }
-    assert(tokki_action_count() == 30);
+    assert(tokki_action_count() == 31);
     assert(tokki_action_at(tokki_action_count()) == NULL);
     assert(tokki_action_find(NULL) == NULL);
     assert(tokki_action_run("missing") == ESP_ERR_NOT_FOUND);
@@ -388,22 +510,15 @@ int main(int argc, char **argv)
             assert(strcmp(action->id, tokki_action_at(other)->id) != 0);
         }
     }
+    reset_output();
     assert(tokki_action_run("led.blink") == ESP_OK);
+    assert(elapsed_ms == 1800);
     test_blink("neopixel.blink_red", 32, 0);
     test_blink("neopixel.blink_yellow", 32, 32);
     test_blink("neopixel.blink_green", 0, 32);
     test_fade("neopixel.breathe_teal", 16, true);
     test_fade("neopixel.pulse_blue", 8, false);
-    reset_output();
-    assert(tokki_action_run("neopixel.rainbow") == ESP_OK);
-    assert(color_calls == 1 && colors[0][0] == 0 && colors[0][1] == 0 && colors[0][2] == 0);
-    reset_output();
-    rainbow_result = ESP_FAIL;
-    assert(tokki_action_run("neopixel.rainbow") == ESP_FAIL);
-    assert(color_calls == 0);
-    reset_output();
-    fail_color_call = 1;
-    assert(tokki_action_run("neopixel.rainbow") == ESP_FAIL);
+    test_rainbow();
     test_oled("oled.happy", 48, 2880);
     test_oled("oled.sad", 48, 2880);
     test_oled("oled.surprised", 48, 2880);
@@ -426,13 +541,27 @@ int main(int argc, char **argv)
     test_glances();
     test_restoring_art();
     test_speaker();
+    test_bark();
     if (preview_output != NULL) {
-        begin_preview("led.blink", 1200, "status");
+        begin_preview("led.blink", 1800, "status");
         fputc('}', preview_output);
-        begin_preview("neopixel.rainbow", 2560, "rainbow");
+        begin_preview("neopixel.rainbow", 3840, "rainbow");
         fputc('}', preview_output);
         begin_preview("speaker.drink_water", 2230, "speech");
         fputc('}', preview_output);
+        begin_preview("speaker.dog_bark", 1020, "recording");
+        fprintf(preview_output, ",\"sampleRate\":%u,\"pcm\":\"", SPEAKER_SAMPLE_RATE_HZ);
+        for (unsigned frame = 0; frame < SPEAKER_SAMPLE_RATE_HZ / 4; ++frame) {
+            fputs("0000", preview_output);
+        }
+        for (size_t index = 0; index < sizeof(bark_pcm) / 2; ++index) {
+            uint16_t sample = (uint16_t) bark_sample(index);
+            fprintf(preview_output, "%02x%02x", (unsigned) (sample & 255), (unsigned) (sample >> 8));
+        }
+        for (unsigned frame = 0; frame < SPEAKER_SAMPLE_RATE_HZ / 4; ++frame) {
+            fputs("0000", preview_output);
+        }
+        fputs("\"}", preview_output);
         assert(preview_actions == tokki_action_count());
         fputs("\n};\n", preview_output);
         assert(fclose(preview_output) == 0);
