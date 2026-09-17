@@ -20,9 +20,10 @@ type Props = {
   initial?: Bundle | null;
   onSave: (bundle: Bundle) => void;
   onCancelEdit?: () => void;
+  onPreviewGesture?: (gesture: GestureDef) => void;
 };
 
-export function BundleComposer({ initial, onSave, onCancelEdit }: Props) {
+export function BundleComposer({ initial, onSave, onCancelEdit, onPreviewGesture }: Props) {
   const editing = !!initial;
   const [lanes, setLanes] = useState<Lanes>(() =>
     initial
@@ -82,6 +83,7 @@ export function BundleComposer({ initial, onSave, onCancelEdit }: Props) {
         setPreview(IDLE_PREVIEW);
         stopRef.current = null;
       },
+      onPreviewGesture,
     );
   }
 

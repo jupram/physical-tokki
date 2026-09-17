@@ -16,13 +16,13 @@ import {
   X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { client, emptySnapshot, isInFlight, queueSummary, type Port, type Snapshot } from "./native";
+import { actionCapacity, client, emptySnapshot, isInFlight, queueSummary, type Port, type Snapshot } from "./native";
 import "./App.css";
 import {
   CATALOG,
   CATALOG_BY_ID,
 } from "./gestures/catalog";
-import type { Bundle } from "./gestures/catalog";
+import type { Bundle, GestureDef } from "./gestures/catalog";
 import { BundleComposer } from "./gestures/BundleComposer";
 import { MediumStudio } from "./gestures/MediumStudio";
 import { GesturePreview, IDLE_PREVIEW } from "./gestures/GesturePreview";
@@ -127,6 +127,7 @@ function App() {
   const connecting = snapshot.status === "connecting" || snapshot.status === "loading";
   const ownsPort = connected || connecting;
   const queue = queueSummary(snapshot.activity);
+  const queueCapacity = actionCapacity(snapshot);
   const visibleActions = snapshot.actions.filter((action) =>
     `${action.id} ${action.name} ${action.device}`.toLowerCase().includes(filter.toLowerCase()));
   const error = localError ?? snapshot.lastError;
@@ -143,6 +144,13 @@ function App() {
   const [eventDraft, setEventDraft] = useState<EventRule | null>(null);
   const [simulationStatus, setSimulationStatus] = useState("Local preview ready");
   const stopRef = useRef<(() => void) | null>(null);
+
+  function previewOnDevice(gesture: GestureDef) {
+    if (!connected) return;
+    void client.run(gesture.id).catch((error) => {
+      setLocalError(`Could not preview ${gesture.name} on the device: ${String(error)}`);
+    });
+  }
 
   function stopPreview() {
     stopRef.current?.();
@@ -169,6 +177,7 @@ function App() {
         setSimulationStatus("Local preview ready");
         stopRef.current = null;
       },
+      previewOnDevice,
     );
   }
 
@@ -305,7 +314,7 @@ function App() {
                 <article><span>Gestures</span><strong>{snapshot.actions.length}</strong><small>{connected ? "All catalog pages loaded" : "Waiting for device catalog"}</small></article>
               </div>
               <div className="activity-strip" role="status"><Radio size={18} /><span>{statusText}{snapshot.port ? ` · ${snapshot.port}` : ""}{snapshot.hello && !snapshot.hello.ready ? " · Firmware not ready yet" : ""}</span></div>
-              <p className="help-text">Gestures run serially: one active, up to four waiting. They are finite and cannot be cancelled. Disconnecting does not stop accepted gestures. When the device queue drains, the pet resumes idle behavior.</p>
+              <p className="help-text">Gestures for separate devices run in parallel; each device remains serial, with up to four additional actions waiting globally. Gestures are finite and cannot be cancelled. Disconnecting does not stop accepted gestures. When the OLED queue drains, the pet resumes idle behavior.</p>
               <p className="help-text">Connection readiness covers board, LED, and RGB startup only. OLED and speaker initialize on use; their driver failures are reported in Activity.</p>
               <button className="connection-button catalog-link" disabled={!connected} onClick={() => setView("gestures")}><Sparkles size={16} /> Browse device gestures</button>
             </section>
@@ -316,25 +325,25 @@ function App() {
               <div className="section-heading"><div><h2 id="gestures-heading">Action catalog</h2><p>Names and stable IDs discovered from your connected pet.</p></div><button className="connection-button" disabled={!connected || busy} onClick={() => void command(() => client.refresh())}><RefreshCw size={16} /> Refresh catalog</button></div>
               <label className="search-label" htmlFor="gesture-filter">Find a gesture</label>
               <input id="gesture-filter" type="search" placeholder="Search name, device, or ID" value={filter} onChange={(event) => setFilter(event.target.value)} />
-              <p className="help-text catalog-help">Send queues a real gesture on the pet. No cancellation or automatic retries.</p>
+              <p className="help-text catalog-help">Send queues a real gesture on the pet. Preview plays on this PC and, while connected, on the pet. No cancellation or automatic retries.</p>
               <div className="action-list">
                 {visibleActions.map((action) => (
                   <article className="action-row" key={action.id}>
                     <span className="device-icon"><Sparkles size={19} /></span>
                     <div className="action-name"><strong>{action.name}</strong><code>{action.id}</code></div>
                     <span className="action-device">{action.device}</span>
-                    <button className="connection-button" title={`Send ${action.name}`} aria-label={`Send ${action.name}`} disabled={!connected || busy || queue.inFlight >= 5} onClick={() => void command(() => client.run(action.id))}><Play size={16} /> Send</button>
+                    <button className="connection-button" title={`Send ${action.name}`} aria-label={`Send ${action.name}`} disabled={!connected || busy || queue.inFlight >= queueCapacity} onClick={() => void command(() => client.run(action.id))}><Play size={16} /> Send</button>
                   </article>
                 ))}
                 {visibleActions.length === 0 && <div className="empty-state">{connecting ? "Fetching all catalog pages…" : connected ? "No gestures match this view." : "Connect on the Device screen to discover gestures."}</div>}
               </div>
               <div className="section-heading preview-heading">
-                <div><h2>Local previews</h2><p>{CATALOG.length} atomic gestures mirrored from firmware for offline preview.</p></div>
-                <span className="state-pill"><Radio size={13} /> Mirrored registry</span>
+                <div><h2>Local previews</h2><p>{CATALOG.length} atomic gestures mirrored on this PC{connected ? " and the connected pet" : "; connect a pet to mirror them on the device"}.</p></div>
+                <span className="state-pill"><Radio size={13} /> {connected ? "PC + device" : "PC only"}</span>
               </div>
-              <MediumStudio medium="oled" />
-              <MediumStudio medium="led" />
-              <MediumStudio medium="speaker" />
+              <MediumStudio medium="oled" onPreviewGesture={previewOnDevice} />
+              <MediumStudio medium="led" onPreviewGesture={previewOnDevice} />
+              <MediumStudio medium="speaker" onPreviewGesture={previewOnDevice} />
             </section>
           )}
 
@@ -345,6 +354,7 @@ function App() {
                 initial={editingBundle}
                 onSave={saveBundle}
                 onCancelEdit={() => setEditingBundleId("")}
+                onPreviewGesture={previewOnDevice}
               />
               <div className="activity-strip" role="status">
                 <Radio size={18} /><span>{simulationStatus}</span>

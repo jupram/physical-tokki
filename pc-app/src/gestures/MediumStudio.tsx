@@ -1,7 +1,7 @@
 import { useRef, useState } from "react";
 import { CircleStop, Play } from "lucide-react";
 import { CATALOG_BY_ID, MEDIUM_LABEL, gesturesByMedium } from "./catalog";
-import type { LedSim, Medium, OledSim, SpeakerSim } from "./catalog";
+import type { GestureDef, LedSim, Medium, OledSim, SpeakerSim } from "./catalog";
 import { MediumPreview } from "./GesturePreview";
 import type { PreviewLane } from "./GesturePreview";
 import { cancelSpeech, playSound } from "./audio";
@@ -10,7 +10,12 @@ type LaneSim = OledSim | LedSim | SpeakerSim;
 
 // One medium row on the Gestures page: a dropdown on the left drives a live
 // preview of that medium on the right.
-export function MediumStudio({ medium }: { medium: Medium }) {
+type Props = {
+  medium: Medium;
+  onPreviewGesture?: (gesture: GestureDef) => void;
+};
+
+export function MediumStudio({ medium, onPreviewGesture }: Props) {
   const gestures = gesturesByMedium(medium);
   const first = gestures[0];
   const [selectedId, setSelectedId] = useState(first?.id ?? "");
@@ -50,6 +55,7 @@ export function MediumStudio({ medium }: { medium: Medium }) {
     if (medium === "speaker" && selected.sim.speaker) {
       playSound(selected.sim.speaker.sound);
     }
+    onPreviewGesture?.(selected);
     const timer = window.setTimeout(() => {
       setPlaying(false);
       setLane({ sim, label: selected.name, active: false });

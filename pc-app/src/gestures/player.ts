@@ -24,6 +24,7 @@ export function playBundle(
   lanes: LaneGestures,
   setState: (updater: (prev: PreviewState) => PreviewState) => void,
   onDone: () => void,
+  onGestureStart?: (gesture: GestureDef) => void,
 ): () => void {
   const timers: number[] = [];
 
@@ -45,6 +46,7 @@ export function playBundle(
           if (medium === "speaker" && gesture.sim.speaker) {
             playSound(gesture.sim.speaker.sound);
           }
+          onGestureStart?.(gesture);
         }, startAt),
       );
 

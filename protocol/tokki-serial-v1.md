@@ -83,10 +83,12 @@ TOKKI/1 {"id":"3","method":"action.run","params":{"actionId":"neopixel.rainbow"}
 ```
 
 The response `{"accepted":true}` in `result` confirms acceptance, not playback
-completion. There is one serial worker, with up to **four waiting actions plus
-one currently running action**. The queue is FIFO; full queues return
-`device_busy` without accepting or running that request. Firmware emits
-acceptance before that request's `action.started` event.
+completion. There is one worker per physical device (OLED, speaker, status LED,
+and NeoPixel), with up to **four waiting actions globally plus one running
+action per device**. Actions for different devices can run concurrently.
+Actions for the same device retain FIFO order. Full queues return `device_busy`
+without accepting or running that request. Firmware emits acceptance before
+that request's `action.started` event.
 
 Execution state is reported separately:
 
@@ -155,7 +157,8 @@ Run `.\tests\host\run.ps1 -Runtime` after an ESP-IDF production build has
 restored the managed cJSON dependency. It compiles the real protocol, catalog,
 and idle renderer with mocked hardware, checking fragmented/combined frames,
 CRLF, the exact 1024-byte boundary, malformed input recovery, all catalog pages,
-FIFO capacity/order, acceptance/lifecycle ordering, errors, and idle frames.
+per-device FIFO capacity/order, cross-device dispatch, acceptance/lifecycle
+ordering, errors, and idle frames.
 It does not emulate UART electrical behavior or physical OLED timing.
 
 For cross-language conformance tests, add `-WireFixturePath <output-file>` to

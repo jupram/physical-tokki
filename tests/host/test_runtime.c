@@ -216,7 +216,7 @@ static void test_queue_and_lifecycle(void)
     tokki_protocol_t protocol;
     tokki_job_t job;
     init(&protocol, true);
-    assert(!tokki_protocol_start_next(&protocol, &job));
+    assert(!tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
     for (unsigned index = 0; index < 5; ++index) {
         char request[160];
         snprintf(request, sizeof(request),
@@ -230,27 +230,30 @@ static void test_queue_and_lifecycle(void)
         assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(value, "ok")));
         cJSON_Delete(value);
     }
-    assert(tokki_protocol_start_next(&protocol, &job));
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
     expect_event(5, "action.started", "run-0");
     assert(strcmp(job.action_id, "oled.blink") == 0 && protocol.count == 3);
     /* Reception and discovery continue while a job is active. */
     feed(&protocol, "TOKKI/1 {\"id\":\"extra\",\"method\":\"action.run\",\"params\":{\"actionId\":\"led.blink\"}}\n");
     feed(&protocol, "TOKKI/1 {\"id\":\"live\",\"method\":\"hello\",\"params\":{}}\n");
     assert(protocol.count == 4);
+    /* A second device can start while the first OLED job is still active. */
+    tokki_job_t parallel_job;
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_LED, &parallel_job));
+    assert(strcmp(parallel_job.request_id, "extra") == 0);
+    tokki_protocol_finish(&protocol, &parallel_job, ESP_OK);
+    assert(!tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_LED, &parallel_job));
     tokki_protocol_finish(&protocol, &job, ESP_OK);
-    expect_event(8, "action.completed", "run-0");
+    expect_event(10, "action.completed", "run-0");
     for (unsigned index = 1; index < 4; ++index) {
-        assert(tokki_protocol_start_next(&protocol, &job));
+        assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
         char expected[16];
         snprintf(expected, sizeof(expected), "run-%u", index);
         assert(strcmp(job.request_id, expected) == 0);
         tokki_protocol_finish(&protocol, &job, ESP_FAIL);
         expect_event(output_count - 1, "action.failed", expected);
     }
-    assert(tokki_protocol_start_next(&protocol, &job));
-    assert(strcmp(job.request_id, "extra") == 0);
-    tokki_protocol_finish(&protocol, &job, ESP_OK);
-    assert(!tokki_protocol_start_next(&protocol, &job));
+    assert(!tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
     feed(&protocol, "TOKKI/1 {\"id\":\"stop\",\"method\":\"action.stop\",\"params\":{\"requestId\":\"run-0\"}}\n");
     expect_error(output_count - 1, "not_cancellable");
     feed(&protocol, "TOKKI/1 {\"id\":\"stop\",\"method\":\"action.stop\",\"params\":{}}\n");
@@ -295,7 +298,7 @@ static void test_idle(void)
     /* A failed idle OLED does not prevent a queued LED action. */
     feed(&protocol, "TOKKI/1 {\"id\":\"led\",\"method\":\"action.run\",\"params\":{\"actionId\":\"led.blink\"}}\n");
     tokki_job_t job;
-    assert(tokki_protocol_start_next(&protocol, &job));
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_LED, &job));
     assert(tokki_action_run(job.action_id) == ESP_OK);
     tokki_idle_reset(&idle);
     draw_result = ESP_OK;
@@ -317,10 +320,10 @@ static void export_wire_fixture(void)
     }
     feed(&protocol, "TOKKI/1 {\"id\":\"fixture-run\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.blink\"}}\n");
     tokki_job_t job;
-    assert(tokki_protocol_start_next(&protocol, &job));
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
     tokki_protocol_finish(&protocol, &job, ESP_OK);
     feed(&protocol, "TOKKI/1 {\"id\":\"fixture-fail\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.blink\"}}\n");
-    assert(tokki_protocol_start_next(&protocol, &job));
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
     tokki_protocol_finish(&protocol, &job, ESP_FAIL);
     tokki_protocol_idle_error(&protocol, ESP_FAIL);
     feed(&protocol, "TOKKI/1 {\"id\":\"fixture-missing\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.missing\"}}\n");
@@ -339,6 +342,6 @@ int main(int argc, char **argv)
     test_catalog();
     test_queue_and_lifecycle();
     test_idle();
-    puts("PASS: serial framing, bounded JSON, catalog pagination, FIFO/backpressure, lifecycle and idle frames");
+    puts("PASS: serial framing, bounded JSON, catalog pagination, per-device FIFO/backpressure, lifecycle and idle frames");
     return 0;
 }

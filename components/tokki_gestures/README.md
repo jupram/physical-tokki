@@ -86,9 +86,10 @@ self-test timing are unchanged. The default rainbow driver API keeps its
 20 ms steps; the gesture uses the timed variant.
 
 All actions have fixed parameters and `cancellable = false`. They block the
-caller and must run serially. Durations are nominal, excluding initialization,
-I/O overhead and scheduler rounding. Production protocol code calls them
-from a serialized worker, not from its receive loop. Concurrent actions on the
+caller and must run serially per physical device. Durations are nominal,
+excluding initialization, I/O overhead and scheduler rounding. Production
+protocol code calls them from per-device workers, not from its receive loop.
+Different physical devices can run concurrently; concurrent actions on the
 same driver, cancellation, arbitrary text and dynamic names are not supported.
 
 Initialize `tokki_board`, `tokki_led` and `tokki_neopixel` as production does.
