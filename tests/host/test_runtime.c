@@ -195,9 +195,12 @@ static void test_catalog(void)
         assert(discovered < tokki_action_count() ? (size_t) next->valueint == discovered : cJSON_IsNull(next));
         cJSON_Delete(value);
     } while (discovered < tokki_action_count());
-    assert(discovered == 31 && output_count == 8);
+    assert(discovered == tokki_action_count());
+    assert(output_count == (discovered + TOKKI_CATALOG_PAGE_SIZE - 1) / TOKKI_CATALOG_PAGE_SIZE);
 
-    const char *invalid[] = {"-1", "0.5", "32", "\"0\"", "null"};
+    char beyond_catalog[32];
+    snprintf(beyond_catalog, sizeof(beyond_catalog), "%u", (unsigned) tokki_action_count() + 1);
+    const char *invalid[] = {"-1", "0.5", beyond_catalog, "\"0\"", "null"};
     for (size_t index = 0; index < sizeof(invalid) / sizeof(invalid[0]); ++index) {
         char request[160];
         snprintf(request, sizeof(request),

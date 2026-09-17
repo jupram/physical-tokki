@@ -94,7 +94,8 @@ npm run build
 cargo test --manifest-path .\src-tauri\Cargo.toml
 ```
 
-The host suite covers all 31 gestures, including the twice-repeated bark recording, and additionally checks
+The host suite covers all 42 gestures, including the unchanged twice-repeated
+bark and the separate CC0 single-bark recording, and additionally checks
 protocol framing, complete paginated discovery, bounded FIFO execution,
 lifecycle events, malformed input recovery, and one-frame idle rendering.
 The UART/FreeRTOS adapter and actual peripherals still need an on-device

@@ -52,10 +52,24 @@ assignments in `tokki_board`.
 | `speaker.chime` | About 0.96 s | Two rising notes (400 ms audible), 60 ms gap, 500 ms silence |
 | `speaker.ping` | About 0.60 s | One 100 ms, 1320 Hz ping plus 500 ms silence |
 | `speaker.dog_bark` | About 1.02 s | User-provided recording repeated twice (0.519875 s), plus 500 ms silence |
+| `speaker.bubble` | About 0.59 s | Synthetic 90 ms falling pop, 1200 to 480 Hz, plus silence |
+| `speaker.whistle` | About 0.78 s | Synthetic 280 ms rising whistle, 900 to 2100 Hz, plus silence |
+| `speaker.sigh` | About 0.86 s | Synthetic 360 ms falling sigh, 850 to 350 Hz, plus silence |
+| `speaker.boing` | About 0.74 s | Synthetic rising/falling bounce, 240 ms audible, plus silence |
+| `speaker.question` | About 0.82 s | Note and upward inflection, 270 ms audible plus gap/silence |
+| `speaker.downstep` | About 0.86 s | Gentle two-note descent, 320 ms audible plus gap/silence |
+| `speaker.sparkle` | About 0.83 s | Three ascending notes, 270 ms audible plus gaps/silence |
+| `speaker.trill` | About 0.76 s | Three quick chirrups, 210 ms audible plus gaps/silence |
+| `speaker.knock` | About 0.73 s | Two synthetic knocks, 130 ms audible plus gap/silence |
+| `speaker.sonar` | About 0.85 s | Two pings, second at 40% relative gain, plus gap/silence |
+| `speaker.bark` | About 1.00 s | One 0.5 s CC0 recorded bark excerpt plus silence |
 
-There are 31 actions (18 OLED, 6 NeoPixel, 1 status LED, 6 speaker), of which 29
-are new relative to the initial scaffold. The recorded bark extends the
-previous 30-action catalog. No event bundles are registered. Glances are expressions,
+There are 42 actions (18 OLED, 6 NeoPixel, 1 status LED, 17 speaker), of which 40
+are new relative to the initial scaffold. This sound follow-up adds ten
+synthetic effects and one CC0 recorded bark to main's 31-action catalog.
+Both existing bark IDs are preserved: `speaker.dog_bark` uses the upstream
+double recording; `speaker.bark` uses a separate CC0 single-bark excerpt.
+No event bundles are registered. Glances are expressions,
 not sensor tracking. Thinking dots are a finite cue, not actual progress or a
 listening indicator. Only a future PC rule should decide whether work is pending
 or completed. Checkmark and chime remain independent actions.
@@ -109,6 +123,8 @@ Successful retries and later gestures do not clear the fault indication.
 The requested OLED text/art extends the previous eyes-only contribution scope
 and needs owner review. `speaker.dog_bark` uses a user-provided recording;
 see [its provenance and redistribution caveat](src/speaker/README.md#dog-bark-asset-provenance).
+`speaker.bark` uses a different CC0 recording; see
+[the separate source details](src/speaker/README.md#dog-bark-recording-and-provenance).
 `Hey <name>` awaits a parameter
 or fixed-name asset decision and has no placeholder registry entry.
 The production runtime and desktop app now support
@@ -127,12 +143,15 @@ Host checks compile the actual registry, action wrappers, eye/art renderers and
 tone generator with warnings as errors. They verify unique IDs, timing, output
 bounds, driver-failure propagation, restored-eye frames, one-eye wink closure,
 directional glances, RGB fades, fixed tone sequences, envelopes and WAV format.
+Sound tests also check monotonic rising/falling frequency bounds, preserve the
+original rising-sweep frequencies, and cap new sound durations including silence
+at 1.5 seconds. This is a maximum, not padding to a minimum sound length.
 I/O is mocked: these tests do not compile or validate the ESP-IDF I2C/I2S drivers.
 
-Optional export of all 31 catalog entries for an external preview:
+Optional export of all 42 catalog entries for an external preview:
 
 ```powershell
-./tests/host/run.ps1 -PreviewPath ../gesture-preview.js
+./tests/host/run.ps1 -PreviewPath ../speaker-preview.js
 ```
 
 The export captures actual OLED frames, new RGB writes and limited PCM tone
@@ -151,6 +170,10 @@ Neither ESP-IDF build nor physical hardware playback was available during the
 initial host validation. Review remains blocked on those gates. Exercise every
 ID, check the OLED missing-device path, repeat speaker playback to check channel
 reuse, and rerun the original standalone self-test before approval.
+
+On 2026-09-16 Ram reported full integration testing of the merged 30-action
+catalog. That report does not validate the eleven new sounds in this follow-up.
+They still need both firmware builds and a hardware listening check.
 
 ## Checklist
 
