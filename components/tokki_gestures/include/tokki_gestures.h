@@ -10,6 +10,7 @@ typedef enum {
     TOKKI_DEVICE_SPEAKER,
     TOKKI_DEVICE_LED,
     TOKKI_DEVICE_NEOPIXEL,
+    TOKKI_DEVICE_COUNT,
 } tokki_device_t;
 
 typedef esp_err_t (*tokki_action_run_fn)(void);

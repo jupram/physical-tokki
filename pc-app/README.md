@@ -43,11 +43,15 @@ is detected at startup, with `?scoutTheme=light` or `?scoutTheme=dark` overrides
    page**. **Gestures → Refresh catalog** repeats discovery from cursor zero.
    `ready` covers board/LED/RGB startup only, not verified OLED or speaker health.
    OLED/speaker initialize lazily; their failures arrive as `action.failed`.
-5. On **Gestures**, search by name, device, or ID and click **Send**. Observe
+5. On **Gestures**, search by name, device, or ID and click **Send**, or use a
+   local preview. A preview always animates in the PC app and also dispatches
+   the same action to the pet while connected. Observe
    **awaiting acceptance → queued → running → completed**, driven by the device.
-   Physically confirm the expected OLED/LED/speaker/NeoPixel behavior. Send
-   several gestures to check serial execution and the four-waiting/one-active
-   limit. Driver failures must appear as **failed** with the firmware error.
+   Physically confirm the expected OLED/LED/speaker/NeoPixel behavior. Bundle
+   lanes start together: separate devices run concurrently, while actions for
+   one device remain ordered. Send several gestures to check the four waiting
+   slots plus one active action per device. Driver failures must appear as
+   **failed** with the firmware error.
 6. Once the queue drains, confirm the pet resumes its autonomous idle behavior.
    There is intentionally **no Stop button**: these gestures are finite and
    noncancellable. Disconnecting or closing the app does **not** cancel work
@@ -81,9 +85,10 @@ device might already have executed it. The app does **not retry action.run**.
   This conservative prototype watchdog is an uncertainty bound, not an action
   duration estimate. A timeout closes the connection, preserves explicit timeout
   history, and requires manual reconnect.
-- Command channel: **16 entries**, bounded command strings; at most **five**
-  local in-flight gestures (including unacknowledged sends). Firmware remains
-  authoritative and can return `device_busy`. Catalog: at most **4096**
+- Command channel: **16 entries**, bounded command strings. The local in-flight
+  bound is the firmware's four waiting slots plus one worker for each device in
+  the discovered catalog. Firmware remains authoritative and can return
+  `device_busy`. Catalog: at most **4096**
   descriptors, no more than four per page; cursor progression, consistent total,
   duplicate IDs, required descriptor fields, and noncancellability are checked.
   Action IDs are at most **96 bytes** and cannot contain NUL. Native requests are

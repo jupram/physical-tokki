@@ -3,7 +3,7 @@ use serde::Serialize;
 use serde_json::{json, Value};
 use serialport::{DataBits, FlowControl, Parity, SerialPortType, StopBits};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, HashSet},
     io::{Read, Write},
     sync::{
         mpsc::{self, Receiver, SyncSender, TryRecvError},
@@ -337,16 +337,29 @@ impl Worker {
                     self.error("Gesture is not in the current device catalog".into());
                     return;
                 };
+                let active_devices = self
+                    .state
+                    .actions
+                    .iter()
+                    .map(|action| action.device.as_str())
+                    .collect::<HashSet<_>>()
+                    .len();
+                let waiting_capacity = self
+                    .state
+                    .hello
+                    .as_ref()
+                    .map_or(0, |hello| hello.queue_capacity);
                 if self
                     .state
                     .activity
                     .iter()
                     .filter(|a| in_flight(&a.state))
                     .count()
-                    >= 5
+                    >= active_devices + waiting_capacity
                 {
                     self.error(
-                        "Local queue full: at most one active and four waiting gestures".into(),
+                        "Local queue full: all device workers and waiting slots are occupied"
+                            .into(),
                     );
                     return;
                 }
@@ -884,7 +897,7 @@ mod tests {
     }
 
     #[test]
-    fn local_queue_allows_five_and_rejects_sixth_without_writing() {
+    fn single_device_limit_allows_five_and_rejects_sixth_without_writing() {
         let (mut w, wire) = test_link(true);
         w.hello().unwrap();
         drain(&mut w);

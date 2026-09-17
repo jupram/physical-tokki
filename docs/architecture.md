@@ -22,18 +22,21 @@ Production firmware initializes devices and exposes the action catalog. The
 self-test is a separate application that diagnoses hardware through the same
 public device APIs, plus raw probes such as the I2C scan where needed.
 
-`tokki_runtime` owns USB-UART reception, the protocol state, a four-slot FIFO,
-and one hardware worker. The receiver parses bounded prefixed JSON lines,
-answers discovery directly, and enqueues commands under a mutex. The worker
-removes jobs under that same mutex, emits lifecycle events, and invokes the
-existing blocking gesture runners outside the lock. This keeps reception
-responsive while guaranteeing acceptance is sent before playback starts.
+`tokki_runtime` owns USB-UART reception, protocol state, a four-slot waiting
+FIFO, and one worker for each physical device. The receiver parses bounded
+prefixed JSON lines, answers discovery directly, and enqueues commands under a
+mutex. Each worker removes the oldest queued job for its device under that same
+mutex, emits lifecycle events, and invokes the existing blocking gesture runner
+outside the lock. Gestures therefore remain serial on the same driver while
+OLED, speaker, status LED, and NeoPixel work can run concurrently. Reception
+stays responsive and acceptance is always sent before playback starts.
 Protocol responses and logs share the console's stdio serialization.
 
-When no job is queued, that worker renders one idle OLED frame at a time from
-the existing pet-eye renderer. A task notification interrupts the inter-frame
-wait for new commands; I/O itself is not cancelled. There is no second OLED
-owner and no change to the gesture runners' non-cancellable contract.
+When no OLED job is queued, the OLED worker renders one idle frame at a time
+from the existing pet-eye renderer. A task notification interrupts the
+inter-frame wait for new OLED commands; I/O itself is not cancelled. There is
+no second OLED owner and no change to the gesture runners' non-cancellable
+contract.
 
 ## Event flow
 

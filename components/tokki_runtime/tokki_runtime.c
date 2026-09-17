@@ -16,8 +16,15 @@
 static const char *TAG = "tokki_runtime";
 static tokki_protocol_t s_protocol;
 static SemaphoreHandle_t s_lock;
-static TaskHandle_t s_worker;
+static TaskHandle_t s_workers[TOKKI_DEVICE_COUNT];
 static TaskHandle_t s_receiver;
+_Static_assert(TOKKI_DEVICE_COUNT == 4, "Update the device worker tables");
+static tokki_device_t s_worker_devices[TOKKI_DEVICE_COUNT] = {
+    TOKKI_DEVICE_OLED,
+    TOKKI_DEVICE_SPEAKER,
+    TOKKI_DEVICE_LED,
+    TOKKI_DEVICE_NEOPIXEL,
+};
 
 static void indicate_failure(void)
 {
@@ -56,7 +63,9 @@ static void receive_commands(void *context)
             bool pending = s_protocol.count > 0;
             xSemaphoreGive(s_lock);
             if (pending) {
-                xTaskNotifyGive(s_worker);
+                for (size_t index = 0; index < TOKKI_DEVICE_COUNT; ++index) {
+                    xTaskNotifyGive(s_workers[index]);
+                }
             }
         }
     }
@@ -64,14 +73,16 @@ static void receive_commands(void *context)
 
 static void execute_actions(void *context)
 {
-    (void) context;
+    tokki_device_t device = *(tokki_device_t *) context;
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
     tokki_idle_t idle;
-    tokki_idle_reset(&idle);
+    if (device == TOKKI_DEVICE_OLED) {
+        tokki_idle_reset(&idle);
+    }
     for (;;) {
         tokki_job_t job;
         xSemaphoreTake(s_lock, portMAX_DELAY);
-        bool pending = tokki_protocol_start_next(&s_protocol, &job);
+        bool pending = tokki_protocol_start_next_for_device(&s_protocol, device, &job);
         xSemaphoreGive(s_lock);
         if (pending) {
             esp_err_t result = tokki_action_run(job.action_id);
@@ -84,10 +95,16 @@ static void execute_actions(void *context)
             if (result != ESP_OK) {
                 ESP_LOGE(TAG, "%s failed: %s", job.action_id, esp_err_to_name(result));
             }
-            tokki_idle_reset(&idle);
+            if (device == TOKKI_DEVICE_OLED) {
+                tokki_idle_reset(&idle);
+            }
             continue;
         }
 
+        if (device != TOKKI_DEVICE_OLED) {
+            ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+            continue;
+        }
         esp_err_t result = tokki_idle_step(&idle);
         if (result != ESP_OK) {
             indicate_failure();
@@ -118,20 +135,37 @@ esp_err_t tokki_runtime_start(bool ready)
         return result;
     }
     tokki_protocol_init(&s_protocol, ready, emit_frame, NULL);
-    if (xTaskCreate(execute_actions, "tokki_actions", 8192, NULL, 5, &s_worker) != pdPASS) {
-        uart_driver_delete(CONFIG_ESP_CONSOLE_UART_NUM);
-        vSemaphoreDelete(s_lock);
-        s_lock = NULL;
-        return ESP_ERR_NO_MEM;
+    static const char *const worker_names[TOKKI_DEVICE_COUNT] = {
+        "tokki_oled",
+        "tokki_speaker",
+        "tokki_led",
+        "tokki_neopixel",
+    };
+    for (size_t index = 0; index < TOKKI_DEVICE_COUNT; ++index) {
+        if (xTaskCreate(execute_actions, worker_names[index], 8192,
+                        &s_worker_devices[index], 5, &s_workers[index]) != pdPASS) {
+            for (size_t created = 0; created < index; ++created) {
+                vTaskDelete(s_workers[created]);
+                s_workers[created] = NULL;
+            }
+            uart_driver_delete(CONFIG_ESP_CONSOLE_UART_NUM);
+            vSemaphoreDelete(s_lock);
+            s_lock = NULL;
+            return ESP_ERR_NO_MEM;
+        }
     }
     if (xTaskCreate(receive_commands, "tokki_serial", 8192, NULL, 6, &s_receiver) != pdPASS) {
-        vTaskDelete(s_worker);
-        s_worker = NULL;
+        for (size_t index = 0; index < TOKKI_DEVICE_COUNT; ++index) {
+            vTaskDelete(s_workers[index]);
+            s_workers[index] = NULL;
+        }
         uart_driver_delete(CONFIG_ESP_CONSOLE_UART_NUM);
         vSemaphoreDelete(s_lock);
         s_lock = NULL;
         return ESP_ERR_NO_MEM;
     }
-    xTaskNotifyGive(s_worker);
+    for (size_t index = 0; index < TOKKI_DEVICE_COUNT; ++index) {
+        xTaskNotifyGive(s_workers[index]);
+    }
     return ESP_OK;
 }

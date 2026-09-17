@@ -4,6 +4,7 @@
 #include <stddef.h>
 
 #include "esp_err.h"
+#include "tokki_gestures.h"
 
 #define TOKKI_FRAME_MAX 1024
 #define TOKKI_REQUEST_ID_MAX 64
@@ -30,11 +31,13 @@ typedef struct {
     void *context;
 } tokki_protocol_t;
 
-/* The runtime serializes all calls, including output, with one mutex. */
+/* The runtime serializes protocol state and output with one mutex. */
 void tokki_protocol_init(tokki_protocol_t *protocol, bool ready,
                          tokki_protocol_emit_fn emit, void *context);
 void tokki_protocol_feed(tokki_protocol_t *protocol, const char *bytes, size_t length);
-bool tokki_protocol_start_next(tokki_protocol_t *protocol, tokki_job_t *job);
+bool tokki_protocol_start_next_for_device(tokki_protocol_t *protocol,
+                                          tokki_device_t device,
+                                          tokki_job_t *job);
 void tokki_protocol_finish(tokki_protocol_t *protocol, const tokki_job_t *job,
                            esp_err_t result);
 void tokki_protocol_idle_error(tokki_protocol_t *protocol, esp_err_t result);

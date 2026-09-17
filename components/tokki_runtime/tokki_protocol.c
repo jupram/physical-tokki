@@ -297,13 +297,28 @@ static void lifecycle(tokki_protocol_t *protocol, const char *event,
     emit_json(protocol, object, job != NULL ? job->request_id : NULL);
 }
 
-bool tokki_protocol_start_next(tokki_protocol_t *protocol, tokki_job_t *job)
+bool tokki_protocol_start_next_for_device(tokki_protocol_t *protocol,
+                                          tokki_device_t device,
+                                          tokki_job_t *job)
 {
-    if (protocol->count == 0) {
+    size_t offset = 0;
+    for (; offset < protocol->count; ++offset) {
+        size_t index = (protocol->head + offset) % TOKKI_QUEUE_CAPACITY;
+        const tokki_action_descriptor_t *action =
+            tokki_action_find(protocol->queue[index].action_id);
+        if (action != NULL && action->device == device) {
+            *job = protocol->queue[index];
+            break;
+        }
+    }
+    if (offset == protocol->count) {
         return false;
     }
-    *job = protocol->queue[protocol->head];
-    protocol->head = (protocol->head + 1) % TOKKI_QUEUE_CAPACITY;
+    for (size_t current = offset; current + 1 < protocol->count; ++current) {
+        size_t destination = (protocol->head + current) % TOKKI_QUEUE_CAPACITY;
+        size_t source = (protocol->head + current + 1) % TOKKI_QUEUE_CAPACITY;
+        protocol->queue[destination] = protocol->queue[source];
+    }
     --protocol->count;
     lifecycle(protocol, "action.started", job, ESP_OK);
     return true;

@@ -37,6 +37,11 @@ export function queueSummary(activity: Activity[]) {
   };
 }
 
+export function actionCapacity(snapshot: Snapshot) {
+  const activeDevices = new Set(snapshot.actions.map((action) => action.device)).size;
+  return (snapshot.hello?.queueCapacity ?? 0) + activeDevices;
+}
+
 export function createClient(native: boolean, call: typeof invoke = invoke) {
   function nativeCall<T>(command: string, args?: Record<string, unknown>): Promise<T> {
     if (!native) return Promise.reject(new Error("Native desktop app required. Run npm run tauri dev; browser serial is not supported."));
