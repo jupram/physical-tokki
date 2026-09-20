@@ -38,11 +38,15 @@ is detected at startup, with `?scoutTheme=light` or `?scoutTheme=dark` overrides
    **Connect**. Enumeration does not open ports. The app never scans by opening
    every port and never auto-connects after a failure.
 4. Verify real firmware/board metadata and the discovered action count. The
-   current firmware has 31 descriptors; the UI does not assume that number.
+   current firmware has 44 descriptors; the UI does not assume that number.
    Connect sends hello, waits for `ready: true`, then fetches **every catalog
    page**. **Gestures → Refresh catalog** repeats discovery from cursor zero.
    `ready` covers board/LED/RGB startup only, not verified OLED or speaker health.
    OLED/speaker initialize lazily; their failures arrive as `action.failed`.
+   After flashing the updated sound catalog, reconnect or refresh discovery:
+   `speaker.tone_low`, `speaker.tone_mid`, `speaker.tone_high`, and
+   `speaker.tone_rise` replace the removed sigh, boing, down-step, and CC0
+   single-bark actions. Update saved bundles that reference the retired IDs.
 5. On **Gestures**, search by name, device, or ID and click **Send**, or use a
    local preview. A preview always animates in the PC app and also dispatches
    the same action to the pet while connected. Observe
@@ -52,7 +56,11 @@ is detected at startup, with `?scoutTheme=light` or `?scoutTheme=dark` overrides
    one device remain ordered. Send several gestures to check the four waiting
    slots plus one active action per device. Driver failures must appear as
    **failed** with the firmware error.
-6. Once the queue drains, confirm the pet resumes its autonomous idle behavior.
+6. Once each device's queue drains, confirm it resumes idle: shuffled eye
+   animations (including lovey-dovey and shy) separated by calm holds, and
+   occasional teal breathing with 6-14-second dark pauses. Send OLED and
+   NeoPixel actions during idle to verify each takes priority without stopping
+   the other device's idle animation.
    There is intentionally **no Stop button**: these gestures are finite and
    noncancellable. Disconnecting or closing the app does **not** cancel work
    already accepted by firmware.

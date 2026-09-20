@@ -32,11 +32,20 @@ OLED, speaker, status LED, and NeoPixel work can run concurrently. Reception
 stays responsive and acceptance is always sent before playback starts.
 Protocol responses and logs share the console's stdio serialization.
 
-When no OLED job is queued, the OLED worker renders one idle frame at a time
-from the existing pet-eye renderer. A task notification interrupts the
-inter-frame wait for new OLED commands; I/O itself is not cancelled. There is
-no second OLED owner and no change to the gesture runners' non-cancellable
-contract.
+When no job for its device is queued, the OLED worker renders one idle frame
+at a time and the NeoPixel worker renders intermittent teal breathing frames.
+OLED choices are shuffled without immediate repeats, separated by calm holds;
+NeoPixel breaths are separated by randomized dark pauses. Each worker seeds
+its own small PRNG from `esp_random`, and retains no shared animation state.
+The manual and idle fades share a single delay-free frame primitive.
+
+A task notification interrupts an idle wait for new commands; I/O itself is
+not cancelled. FreeRTOS timeout accounting preserves the remaining deadline
+on unrelated notifications, including across tick wraparound. Completed
+manual actions reset only their own device's idle state. There is no second
+OLED/NeoPixel owner and no change to the gesture runners' non-cancellable
+contract. Idle driver failures keep their frame state and back off five
+seconds, while still allowing queued manual actions to interrupt the wait.
 
 ## Event flow
 

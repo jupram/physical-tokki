@@ -80,6 +80,16 @@ static esp_err_t run_sleepy(void)
     return animate_eyes(PET_EYES_SLEEPY, 0, 24);
 }
 
+static esp_err_t run_lovey_dovey(void)
+{
+    return animate_eyes(PET_EYES_LOVEY_DOVEY, 0, 48);
+}
+
+static esp_err_t run_shy(void)
+{
+    return animate_eyes(PET_EYES_SHY, 0, 48);
+}
+
 static esp_err_t animate_art(tokki_oled_art_t art, unsigned frame_count, unsigned frame_ms)
 {
     uint8_t framebuffer[TOKKI_OLED_FRAME_SIZE];
@@ -212,4 +222,13 @@ const tokki_action_descriptor_t TOKKI_OLED_HEART_ACTION = {
 const tokki_action_descriptor_t TOKKI_OLED_EXCLAMATION_ACTION = {
     .id = "oled.exclamation", .display_name = "Exclamation mark",
     .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_exclamation,
+};
+
+const tokki_action_descriptor_t TOKKI_OLED_LOVEY_DOVEY_ACTION = {
+    .id = "oled.lovey_dovey", .display_name = "Lovey-dovey eyes",
+    .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_lovey_dovey,
+};
+const tokki_action_descriptor_t TOKKI_OLED_SHY_ACTION = {
+    .id = "oled.shy", .display_name = "Shy eyes",
+    .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_shy,
 };

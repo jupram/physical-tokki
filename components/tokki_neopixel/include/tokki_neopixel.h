@@ -1,5 +1,6 @@
 #pragma once
 
+#include <stdbool.h>
 #include <stdint.h>
 
 #include "esp_err.h"
@@ -11,3 +12,5 @@ esp_err_t tokki_neopixel_set_color(uint8_t red,
 esp_err_t tokki_neopixel_rainbow(uint32_t cycles);
 /* 128 steps per cycle; frame_ms must be 1..1000. Retains the last color. */
 esp_err_t tokki_neopixel_rainbow_timed(uint32_t cycles, uint32_t frame_ms);
+/* One frame of the 0..32..0 fade; no delay. step must be 0..2*half_steps. */
+esp_err_t tokki_neopixel_fade_step(bool teal, unsigned step, unsigned half_steps);

@@ -1,0 +1,3 @@
+#pragma once
+
+#define CONFIG_ESP_CONSOLE_UART_NUM 0

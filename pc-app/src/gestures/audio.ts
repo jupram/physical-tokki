@@ -1,4 +1,4 @@
-// Approximates the firmware's five preinstalled speaker sounds with Web Audio so
+// Approximates the locally previewable firmware sounds with Web Audio so
 // bundles can be previewed. A single AudioContext is created lazily after a user
 // gesture to satisfy autoplay policies.
 
@@ -18,15 +18,15 @@ function getContext(): AudioContext | null {
   return context;
 }
 
-function tone(ctx: AudioContext, start: number, freq: number, ms: number, gain = 0.12) {
+function tone(ctx: AudioContext, start: number, freq: number, ms: number, gain = 0.12, fadeMs?: number) {
   const osc = ctx.createOscillator();
   const env = ctx.createGain();
   const end = start + ms / 1000;
   osc.type = "sine";
   osc.frequency.setValueAtTime(freq, start);
   env.gain.setValueAtTime(0, start);
-  env.gain.linearRampToValueAtTime(gain, start + 0.012);
-  env.gain.setValueAtTime(gain, end - 0.02);
+  env.gain.linearRampToValueAtTime(gain, start + (fadeMs ?? 12) / 1000);
+  env.gain.setValueAtTime(gain, end - (fadeMs ?? 20) / 1000);
   env.gain.linearRampToValueAtTime(0, end);
   osc.connect(env).connect(ctx.destination);
   osc.start(start);
@@ -79,6 +79,18 @@ export function playSound(sound: SpeakerSound): () => void {
       break;
     case "ping":
       tone(ctx, t, 1200, 140, 0.14);
+      break;
+    case "tone_low":
+    case "tone_mid":
+    case "tone_high": {
+      const frequencies = { tone_low: 440, tone_mid: 660, tone_high: 880 };
+      tone(ctx, t + 0.25, frequencies[sound], 300, 0.12, 25);
+      break;
+    }
+    case "tone_rise":
+      [440, 660, 880].forEach((frequency, index) => {
+        tone(ctx, t + 0.25 + index * 0.26, frequency, 200, 0.12, 25);
+      });
       break;
   }
   return () => {};
