@@ -22,3 +22,6 @@ extern const tokki_action_descriptor_t TOKKI_OLED_HEART_ACTION;
 extern const tokki_action_descriptor_t TOKKI_OLED_EXCLAMATION_ACTION;
 extern const tokki_action_descriptor_t TOKKI_OLED_LOVEY_DOVEY_ACTION;
 extern const tokki_action_descriptor_t TOKKI_OLED_SHY_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_NIGHT_SKY_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_SUNRISE_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_SLEEPING_ACTION;

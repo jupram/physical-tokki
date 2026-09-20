@@ -98,7 +98,7 @@ The sleepy sigh, boing, gentle down-step, and CC0 single-bark actions have
 been removed. Their IDs (`speaker.sigh`, `speaker.boing`, `speaker.downstep`,
 `speaker.bark`) now return `action_not_found` over the PC protocol
 (`ESP_ERR_NOT_FOUND` from the C action runner); they are not aliases for the new sounds.
-The action count stays at 44, including 17 speaker actions.
+These replacements keep the speaker action count at 17.
 
 | Action | Audible duration | Total with silence | Recipe |
 | --- | --- | --- | --- |

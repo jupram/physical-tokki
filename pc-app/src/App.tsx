@@ -18,6 +18,7 @@ import {
 import { useEffect, useRef, useState } from "react";
 import { actionCapacity, client, emptySnapshot, isInFlight, queueSummary, type Port, type Snapshot } from "./native";
 import "./App.css";
+import { PetConnectionBadge, PetWelcome } from "./PetDesk";
 import {
   CATALOG,
   CATALOG_BY_ID,
@@ -271,14 +272,14 @@ function App() {
           <div><strong>Physical Tokki</strong><small>Pet control desk</small></div>
         </div>
         <nav aria-label="Main navigation">
-          <button className={`nav-item ${view === "device" ? "active" : ""}`} onClick={() => setView("device")}><Gauge size={18} /> Device</button>
-          <button className={`nav-item ${view === "gestures" ? "active" : ""}`} onClick={() => setView("gestures")}><Sparkles size={18} /> Gestures <span className="nav-count">{snapshot.actions.length}</span></button>
-          <button className={view === "bundles" ? "nav-item active" : "nav-item"} onClick={() => setView("bundles")}>
+          <button className={`nav-item ${view === "device" ? "active" : ""}`} aria-current={view === "device" ? "page" : undefined} onClick={() => setView("device")}><Gauge size={18} /> Device</button>
+          <button className={`nav-item ${view === "gestures" ? "active" : ""}`} aria-current={view === "gestures" ? "page" : undefined} onClick={() => setView("gestures")}><Sparkles size={18} /> Gestures <span className="nav-count">{snapshot.actions.length}</span></button>
+          <button className={view === "bundles" ? "nav-item active" : "nav-item"} aria-current={view === "bundles" ? "page" : undefined} onClick={() => setView("bundles")}>
             <Layers size={18} /> Bundles <span className="nav-count">{bundles.length}</span>
           </button>
-          <button className={`nav-item ${view === "events" ? "active" : ""}`} onClick={() => setView("events")}><Bell size={18} /> Events <span className="nav-count">{events.length}</span></button>
+          <button className={`nav-item ${view === "events" ? "active" : ""}`} aria-current={view === "events" ? "page" : undefined} onClick={() => setView("events")}><Bell size={18} /> Events <span className="nav-count">{events.length}</span></button>
         </nav>
-        <div className="sidebar-status">
+        <div className={`sidebar-status ${connected ? "is-connected" : "is-disconnected"}`}>
           <Radio size={18} />
           <div><strong>{statusText}</strong><small>{snapshot.port ?? "USB serial · 115200 8N1"}</small></div>
         </div>
@@ -286,16 +287,21 @@ function App() {
 
       <main>
         <header className="topbar">
-          <div><span className="eyebrow">TOKKI DESKTOP / NATIVE SERIAL</span><h1>{view === "device" ? "Device" : view === "gestures" ? "Gestures" : view === "bundles" ? "Bundles" : "Events"}</h1></div>
-          {ownsPort && <button className="connection-button" disabled={busy} onClick={() => void command(() => client.disconnect())}><CircleStop size={17} /> Disconnect</button>}
+          <div><span className="eyebrow">YOUR COMPANION'S CORNER</span><h1>{view === "device" ? "Tokki's desk" : view === "gestures" ? "The playground" : view === "bundles" ? "Mix a little magic" : "Little rituals"}</h1></div>
+          <div className="topbar-actions">
+            {ownsPort && <button className="connection-button" disabled={busy} onClick={() => void command(() => client.disconnect())}><CircleStop size={17} /> Disconnect</button>}
+            <PetConnectionBadge status={snapshot.status} native={client.native} port={snapshot.port} onOpen={() => setView("device")} />
+          </div>
         </header>
         <div className="workspace">
-          {!client.native && <div className="notice" role="status"><strong>Native desktop app required</strong><p>This browser preview cannot open USB serial ports. Run <code>npm run tauri dev</code> to connect to your pet. There is no mock device or simulated success.</p></div>}
+          {!client.native && <div className="notice browser-notice" role="status"><Cable size={20} aria-hidden="true" /><div><strong>You're exploring in the browser</strong><p>Local previews work here. To connect the real Tokki over USB, open the desktop app with <code>npm run tauri dev</code>. This preview does not simulate a device connection.</p></div></div>}
           {error && <div className="notice error" role="alert"><strong>Operation failed</strong><p>{error}</p></div>}
 
           {view === "device" && (
+            <>
+            <PetWelcome connected={connected} onExplore={() => setView("gestures")} onCompose={() => setView("bundles")} onEvents={() => setView("events")} />
             <section aria-labelledby="device-heading">
-              <div className="section-heading"><div><h2 id="device-heading">Connect your pet</h2><p>Choose its USB UART port. Discovery never opens ports automatically.</p></div><span className={`state-pill ${connected ? "online" : ""}`}>{statusText}</span></div>
+              <div className="section-heading"><div><h2 id="device-heading">{connected ? "Tokki is here" : "Bring Tokki to your desk"}</h2><p>Choose your pet's USB port to say hello. We'll only connect when you ask.</p></div><span className={`state-pill ${connected ? "online" : "offline"}`}>{statusText}</span></div>
               <div className="connection-panel">
                 <label htmlFor="serial-port">Serial port</label>
                 <div className="connection-controls">
@@ -318,11 +324,12 @@ function App() {
               <p className="help-text">Connection readiness covers board, LED, and RGB startup only. OLED and speaker initialize on use; their driver failures are reported in Activity.</p>
               <button className="connection-button catalog-link" disabled={!connected} onClick={() => setView("gestures")}><Sparkles size={16} /> Browse device gestures</button>
             </section>
+            </>
           )}
 
           {view === "gestures" && (
             <section aria-labelledby="gestures-heading">
-              <div className="section-heading"><div><h2 id="gestures-heading">Action catalog</h2><p>Names and stable IDs discovered from your connected pet.</p></div><button className="connection-button" disabled={!connected || busy} onClick={() => void command(() => client.refresh())}><RefreshCw size={16} /> Refresh catalog</button></div>
+              <div className="section-heading"><div><h2 id="gestures-heading">A mood for every moment</h2><p>Expressions, little lights, and sounds discovered from your connected pet.</p></div><button className="connection-button" disabled={!connected || busy} onClick={() => void command(() => client.refresh())}><RefreshCw size={16} /> Refresh catalog</button></div>
               <label className="search-label" htmlFor="gesture-filter">Find a gesture</label>
               <input id="gesture-filter" type="search" placeholder="Search name, device, or ID" value={filter} onChange={(event) => setFilter(event.target.value)} />
               <p className="help-text catalog-help">Send queues a real gesture on the pet. Preview plays on this PC and, while connected, on the pet. No cancellation or automatic retries.</p>
@@ -338,7 +345,7 @@ function App() {
                 {visibleActions.length === 0 && <div className="empty-state">{connecting ? "Fetching all catalog pages…" : connected ? "No gestures match this view." : "Connect on the Device screen to discover gestures."}</div>}
               </div>
               <div className="section-heading preview-heading">
-                <div><h2>Local previews</h2><p>{CATALOG.length} atomic gestures mirrored on this PC{connected ? " and the connected pet" : "; connect a pet to mirror them on the device"}.</p></div>
+                <div><h2>Try a little personality</h2><p>{CATALOG.length} local previews to explore on this PC{connected ? " and the connected pet" : ". Connect Tokki to play them on the pet, too"}.</p></div>
                 <span className="state-pill"><Radio size={13} /> {connected ? "PC + device" : "PC only"}</span>
               </div>
               <MediumStudio medium="oled" onPreviewGesture={previewOnDevice} />
@@ -407,7 +414,7 @@ function App() {
           {view === "events" && (
             <section aria-labelledby="events-heading">
               <div className="section-heading">
-                <div><h2 id="events-heading">Automation rules</h2><p>Each event triggers an assigned gesture bundle</p></div>
+                <div><h2 id="events-heading">Small moments, made yours</h2><p>Save an event idea and assign a bundle to try manually. Automatic triggers are not connected yet.</p></div>
                 <button className="primary-button" onClick={newEvent}>
                   <Plus size={17} /> New event
                 </button>
@@ -460,7 +467,7 @@ function App() {
               )}
 
               {events.length === 0 && !eventDraft && (
-                <p className="composer-hint">No events yet \u2014 create one and assign a gesture bundle.</p>
+                <p className="composer-hint">No events yet — create one and assign a gesture bundle.</p>
               )}
 
               {events.map((event) => {
@@ -516,7 +523,7 @@ function App() {
           <section className="activity-panel" aria-labelledby="activity-heading">
             <div className="section-heading"><div><h2 id="activity-heading">Activity</h2><p>{queue.running} running · {queue.queued} queued · {queue.sending} awaiting acceptance</p></div><span className="state-pill">{snapshot.hello?.queueCapacity ?? 4} waiting slots</span></div>
             <p className="help-text">This app session only; newest first, up to 100 entries. Only firmware events mark completion.</p>
-            {snapshot.activity.length === 0 ? <div className="empty-state">No gestures sent in this app session.</div> : (
+            {snapshot.activity.length === 0 ? <div className="empty-state activity-empty"><Sparkles size={22} aria-hidden="true" /><strong>A quiet moment, for now.</strong><span>Gestures sent to your pet will appear here. Only real device activity is logged.</span></div> : (
               <ol className="activity-list">
                 {[...snapshot.activity].reverse().map((item) => (
                   <li key={item.requestId} className={`activity-row ${isInFlight(item.state) ? "in-flight" : ""}`}>

@@ -215,6 +215,26 @@ static void draw_closed_crescent_eye(canvas_t *canvas, const eye_geometry_t *eye
                          3);
 }
 
+static void draw_sleep_marks(canvas_t *canvas, unsigned int frame)
+{
+    if (frame < 8 || frame > 39) {
+        return;
+    }
+    for (unsigned i = 0; i < 3; ++i) {
+        int age = (int) ((frame - 8 + i * 8) % 24);
+        int x = 78 + age;
+        int y = 22 - age * 3 / 4;
+        int size = 3 + age / 6;
+        int thickness = size >= 5 ? 2 : 1;
+        for (int offset = 0; offset < thickness; ++offset) {
+            draw_line(canvas, x, y + offset, x + size, y + offset, true);
+            draw_line(canvas, x + size, y + offset, x, y + size + 1 + offset, true);
+            draw_line(canvas, x, y + size + 1 + offset,
+                      x + size, y + size + 1 + offset, true);
+        }
+    }
+}
+
 static void apply_lid_masks(canvas_t *canvas, const eye_geometry_t *eye)
 {
     for (int x = -eye->radius_x; x <= eye->radius_x; ++x) {
@@ -418,6 +438,22 @@ static void configure_expression_geometry(eye_geometry_t eyes[2],
         }
         break;
     }
+    case PET_EYES_SLEEPING: {
+        static const motion_key_t doze[] = {
+            {0, 0}, {8, 100}, {39, 100}, {46, 0}, {47, 0},
+        };
+        static const motion_key_t breathe[] = {
+            {0, 0}, {8, 0}, {20, 100}, {32, 0}, {39, 0}, {47, 0},
+        };
+        int closure = sample_motion(doze, sizeof(doze) / sizeof(doze[0]), position);
+        int bob = sample_motion(breathe, sizeof(breathe) / sizeof(breathe[0]), position);
+        for (int i = 0; i < 2; ++i) {
+            animate_squash_stretch(&eyes[i], closure);
+            eyes[i].center_y += (5 + bob / 60) * closure / 100;
+            eyes[i].pupil_y += (5 + bob / 60) * closure / 100;
+        }
+        break;
+    }
     }
 }
 
@@ -452,5 +488,8 @@ void pet_eyes_render(uint8_t *framebuffer,
         } else {
             draw_open_eye(&canvas, &eyes[i]);
         }
+    }
+    if (expression == PET_EYES_SLEEPING) {
+        draw_sleep_marks(&canvas, frame % 48);
     }
 }

@@ -6,6 +6,7 @@
 #include "driver/uart.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "pet_eyes.h"
 #include "tokki_idle.h"
 #include "tokki_led.h"
 #include "tokki_neopixel.h"
@@ -41,8 +42,12 @@ static unsigned completions;
 static unsigned faults;
 static unsigned idle_errors;
 static unsigned logs;
-static TickType_t write_times[40];
-static uint8_t colors[40];
+#define MAX_WRITES 128
+static TickType_t write_times[MAX_WRITES];
+static uint8_t colors[MAX_WRITES];
+static uint32_t random_seed = 12345;
+static uint8_t last_oled_frame[TOKKI_OLED_FRAME_SIZE];
+static uint8_t preempted_frame[TOKKI_OLED_FRAME_SIZE];
 static jmp_buf worker_done;
 
 BaseType_t xTaskCreate(TaskFunction_t function, const char *name, uint32_t stack_depth,
@@ -150,7 +155,7 @@ int uart_read_bytes(int port, void *buffer, size_t length, TickType_t timeout)
     return 0;
 }
 
-uint32_t esp_random(void) { return 12345; }
+uint32_t esp_random(void) { return random_seed; }
 const char *esp_err_to_name(esp_err_t result) { return result == ESP_OK ? "ESP_OK" : "ESP_FAIL"; }
 void test_log(const char *tag, const char *format, ...)
 {
@@ -161,7 +166,7 @@ esp_err_t tokki_led_latch_failure(void) { ++faults; return ESP_OK; }
 
 static esp_err_t record_write(void)
 {
-    assert(!locked && writes < 40);
+    assert(!locked && writes < MAX_WRITES);
     write_times[writes++] = now;
     return fail_idle && writes == 1 ? ESP_FAIL : ESP_OK;
 }
@@ -169,13 +174,14 @@ static esp_err_t record_write(void)
 esp_err_t tokki_oled_draw_frame(const uint8_t *frame, size_t length)
 {
     assert(device == TOKKI_DEVICE_OLED && frame != NULL && length == TOKKI_OLED_FRAME_SIZE);
+    memcpy(last_oled_frame, frame, length);
     return record_write();
 }
 
 esp_err_t tokki_neopixel_set_color(uint8_t red, uint8_t green, uint8_t blue)
 {
     assert(device == TOKKI_DEVICE_NEOPIXEL && red == 0 && green == blue && blue <= 32);
-    assert(writes < 40);
+    assert(writes < MAX_WRITES);
     colors[writes] = blue;
     return record_write();
 }
@@ -205,6 +211,9 @@ esp_err_t tokki_action_run(const char *id)
 {
     assert(!locked && strcmp(id, "test.action") == 0 && writes == writes_before_action);
     ++actions;
+    if (device == TOKKI_DEVICE_OLED) {
+        memcpy(preempted_frame, last_oled_frame, sizeof(preempted_frame));
+    }
     action_time = now;
     return fail_action ? ESP_FAIL : ESP_OK;
 }
@@ -293,6 +302,40 @@ int main(void)
         assert(write_times[i + 1] - write_times[i] == 60);
     }
     assert(write_times[34] - write_times[1] == 1980);
-    puts("PASS: real worker idle deadlines, cross-device notifications, PC priority, reset, errors and tick wrap");
+    const unsigned sequence_frames[] = {12, 47, 48, 60, 94};
+    for (unsigned sample = 0; sample < sizeof(sequence_frames) / sizeof(sequence_frames[0]); ++sample) {
+        unsigned frame = sequence_frames[sample];
+        tokki_idle_t probe;
+        unsigned rest = 0;
+        device = TOKKI_DEVICE_OLED;
+        fail_idle = false;
+        for (random_seed = 1; random_seed < 100; ++random_seed) {
+            writes = 0;
+            tokki_idle_reset(&probe, random_seed);
+            rest = probe.frames;
+            for (unsigned rest_frame = 0; rest_frame < rest; ++rest_frame) {
+                assert(tokki_idle_step(&probe) == ESP_OK);
+            }
+            if (probe.phase == 8) break;
+        }
+        assert(random_seed < 100);
+        uint8_t expected[TOKKI_OLED_FRAME_SIZE];
+        if (frame < 48) {
+            pet_eyes_render(expected, sizeof(expected), 128, 64, PET_EYES_SLEEPING, frame > 39 ? 39 : frame);
+        } else {
+            assert(tokki_oled_render_art(expected, sizeof(expected), TOKKI_OLED_ART_NIGHT_SKY, frame - 48) == ESP_OK);
+        }
+        for (unsigned wrap = 0; wrap < 2; ++wrap) {
+            run_worker(TOKKI_DEVICE_OLED, false, false, false, wrap ? UINT32_MAX - 15 : 0, rest + frame);
+            assert(actions == 1 && completions == 1 && writes == rest + frame + 2);
+            assert(first_wait == 60 && action_time - write_times[writes_before_action - 1] == 35);
+            assert(memcmp(preempted_frame, expected, sizeof(expected)) == 0);
+            uint8_t neutral[TOKKI_OLED_FRAME_SIZE];
+            pet_eyes_render(neutral, sizeof(neutral), 128, 64, PET_EYES_HAPPY, 0);
+            assert(memcmp(last_oled_frame, neutral, sizeof(neutral)) == 0);
+            assert(last_wait == 60 && pending[TOKKI_DEVICE_NEOPIXEL]);
+        }
+    }
+    puts("PASS: real worker idle deadlines, cross-device notifications, PC priority (including sleep/night sky), reset, errors and tick wrap");
     return 0;
 }

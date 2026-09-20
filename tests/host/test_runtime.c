@@ -177,6 +177,8 @@ static void test_catalog(void)
     size_t discovered = 0;
     unsigned affectionate_eyes = 0;
     unsigned reference_tones = 0;
+    unsigned sky_scenes = 0;
+    unsigned sleeping_eyes = 0;
     do {
         char request[160];
         snprintf(request, sizeof(request),
@@ -203,6 +205,14 @@ static void test_catalog(void)
                 assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "speaker") == 0);
                 ++reference_tones;
             }
+            if (strcmp(expected->id, "oled.night_sky") == 0 || strcmp(expected->id, "oled.sunrise") == 0) {
+                assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "oled") == 0);
+                ++sky_scenes;
+            }
+            if (strcmp(expected->id, "oled.sleeping") == 0) {
+                assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "oled") == 0);
+                ++sleeping_eyes;
+            }
         }
         assert((size_t) cJSON_GetObjectItemCaseSensitive(result, "total")->valueint == tokki_action_count());
         cJSON *next = cJSON_GetObjectItemCaseSensitive(result, "nextCursor");
@@ -212,6 +222,8 @@ static void test_catalog(void)
     assert(discovered == tokki_action_count());
     assert(affectionate_eyes == 2);
     assert(reference_tones == 4);
+    assert(sky_scenes == 2);
+    assert(sleeping_eyes == 1);
     assert(output_count == (discovered + TOKKI_CATALOG_PAGE_SIZE - 1) / TOKKI_CATALOG_PAGE_SIZE);
 
     char beyond_catalog[32];
@@ -299,8 +311,10 @@ static void test_idle(void)
     const pet_eye_expression_t expressions[] = {
         PET_EYES_HAPPY, PET_EYES_LOOK_LEFT, PET_EYES_LOOK_RIGHT, PET_EYES_LOOK_UP,
         PET_EYES_HAPPY, PET_EYES_CURIOUS, PET_EYES_LOVEY_DOVEY, PET_EYES_SHY,
+        PET_EYES_SLEEPING,
     };
-    const unsigned frames[] = {9, 24, 24, 24, 48, 48, 48, 48};
+    const unsigned frames[] = {9, 24, 24, 24, 48, 48, 48, 48, 96};
+    assert(TOKKI_IDLE_EYE_VARIANTS == 9);
     unsigned first_choices = 0;
     unsigned minimum_rest = 20;
     unsigned maximum_rest = 10;
@@ -308,11 +322,11 @@ static void test_idle(void)
     draw_result = ESP_OK;
     for (uint32_t seed = 0; seed < 8; ++seed) {
         tokki_idle_reset(&idle, seed);
-        unsigned previous = 8;
+        unsigned previous = TOKKI_IDLE_EYE_VARIANTS;
         for (unsigned round = 0; round < 2; ++round) {
             unsigned seen = 0;
             unsigned glance_blinks = 0;
-            for (unsigned choice = 0; choice < 8; ++choice) {
+            for (unsigned choice = 0; choice < TOKKI_IDLE_EYE_VARIANTS; ++choice) {
                 assert(idle.resting && idle.frame == 0);
                 unsigned rest = idle.frames;
                 assert(rest * TOKKI_IDLE_FRAME_MS >= 600 && rest * TOKKI_IDLE_FRAME_MS <= 1200);
@@ -323,7 +337,7 @@ static void test_idle(void)
                 }
                 assert(!idle.resting && idle.frame == 0);
                 unsigned phase = idle.phase;
-                assert(phase < 8 && phase != previous);
+                assert(phase < TOKKI_IDLE_EYE_VARIANTS && phase != previous);
                 assert((seen & (1U << phase)) == 0);
                 bool side_glance = expressions[phase] == PET_EYES_LOOK_LEFT ||
                                    expressions[phase] == PET_EYES_LOOK_RIGHT;
@@ -331,10 +345,35 @@ static void test_idle(void)
                 if (round == 0 && choice == 0) first_choices |= 1U << phase;
                 seen |= 1U << phase;
                 previous = phase;
+                unsigned sequence_next_phase = idle.next_phase;
+                uint32_t sequence_random_state = idle.random_state;
                 for (unsigned frame = 0; frame < frames[phase]; ++frame) {
                     bool restore = frame + 1 == frames[phase];
-                    expect_idle_frame(&idle, restore ? PET_EYES_HAPPY : expressions[phase],
-                                      restore ? 0 : (phase == 0 ? 34 : 0) + frame);
+                    if (phase == 8) {
+                        assert(!idle.resting && idle.phase == 8 && idle.frame == frame);
+                        assert(idle.next_phase == sequence_next_phase &&
+                               idle.random_state == sequence_random_state);
+                        tokki_idle_t snapshot;
+                        memcpy(&snapshot, &idle, sizeof(idle));
+                        draw_result = ESP_FAIL;
+                        assert(tokki_idle_step(&idle) == ESP_FAIL);
+                        assert(memcmp(&snapshot, &idle, sizeof(idle)) == 0);
+                        draw_result = ESP_OK;
+                    }
+                    if (phase == 8 && frame >= 48 && !restore) {
+                        uint8_t expected[TOKKI_OLED_FRAME_SIZE];
+                        assert(tokki_oled_render_art(expected, sizeof(expected),
+                                                      TOKKI_OLED_ART_NIGHT_SKY, frame - 48) == ESP_OK);
+                        unsigned before = draw_calls;
+                        assert(tokki_idle_step(&idle) == ESP_OK);
+                        assert(draw_calls == before + 1 && delay_calls == 0);
+                        assert(memcmp(expected, last_frame, sizeof(expected)) == 0);
+                    } else {
+                        unsigned eye_frame = phase == 8 && frame > 39 ? 39 :
+                                             (phase == 0 ? 34 : 0) + frame;
+                        expect_idle_frame(&idle, restore ? PET_EYES_HAPPY : expressions[phase],
+                                          restore ? 0 : eye_frame);
+                    }
                 }
                 if (side_glance) {
                     assert(!idle.resting && idle.frame == 24);
@@ -357,7 +396,7 @@ static void test_idle(void)
                 }
                 assert(idle.resting && idle.frame == 0);
             }
-            assert(seen == 255 && glance_blinks == 2);
+            assert(seen == (1U << TOKKI_IDLE_EYE_VARIANTS) - 1 && glance_blinks == 2);
         }
     }
     assert((first_choices & (first_choices - 1)) != 0);

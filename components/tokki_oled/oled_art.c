@@ -39,8 +39,8 @@ static void draw_disc(uint8_t *framebuffer, int center_x, int center_y, int radi
     }
 }
 
-static void draw_stroke(uint8_t *framebuffer, int start_x, int start_y,
-                        int end_x, int end_y)
+static void draw_line(uint8_t *framebuffer, int start_x, int start_y,
+                      int end_x, int end_y, int radius)
 {
     int delta_x = end_x - start_x;
     int delta_y = end_y - start_y;
@@ -48,8 +48,91 @@ static void draw_stroke(uint8_t *framebuffer, int start_x, int start_y,
     for (int step = 0; step <= steps; ++step) {
         int column = start_x + (steps == 0 ? 0 : delta_x * step / steps);
         int row = start_y + (steps == 0 ? 0 : delta_y * step / steps);
-        draw_disc(framebuffer, column, row, 2);
+        draw_disc(framebuffer, column, row, radius);
     }
+}
+
+static void draw_stroke(uint8_t *framebuffer, int start_x, int start_y,
+                        int end_x, int end_y)
+{
+    draw_line(framebuffer, start_x, start_y, end_x, end_y, 2);
+}
+
+static void draw_thin_line(uint8_t *framebuffer, int start_x, int start_y,
+                           int end_x, int end_y)
+{
+    draw_line(framebuffer, start_x, start_y, end_x, end_y, 0);
+}
+
+static void draw_night_sky(uint8_t *framebuffer, unsigned frame)
+{
+    static const uint8_t stars[][3] = {
+        {10, 12, 0}, {29, 8, 5}, {52, 16, 9}, {75, 8, 2},
+        {17, 33, 7}, {38, 26, 12}, {67, 35, 4}, {86, 42, 10},
+        {113, 38, 14}, {46, 43, 1},
+    };
+    static const uint8_t twinkle[] = {0, 0, 1, 1, 2, 2, 1, 1, 0, 0, 0, 0, 1, 1, 0, 0};
+    unsigned phase = frame % 48;
+    for (size_t star = 0; star < sizeof(stars) / sizeof(stars[0]); ++star) {
+        int radius = twinkle[(phase / 3 + stars[star][2]) % 16];
+        int x = stars[star][0];
+        int y = stars[star][1];
+        draw_thin_line(framebuffer, x - radius, y, x + radius, y);
+        draw_thin_line(framebuffer, x, y - radius, x, y + radius);
+    }
+    for (int y = -11; y <= 11; ++y) {
+        for (int x = -11; x <= 11; ++x) {
+            if (x * x + y * y <= 121 && (x - 5) * (x - 5) + (y + 3) * (y + 3) > 100) {
+                set_pixel(framebuffer, 102 + x, 17 + y);
+            }
+        }
+    }
+    if (phase >= 20 && phase < 32) {
+        int travel = (int) phase - 20;
+        int x = 26 + travel * 4;
+        int y = 19 + travel;
+        draw_thin_line(framebuffer, x - 6, y - 2, x, y);
+        draw_disc(framebuffer, x, y, 1);
+    }
+    for (int x = 0; x < TOKKI_OLED_WIDTH; ++x) {
+        int distance = x % 48 - 24;
+        if (distance < 0) distance = -distance;
+        set_pixel(framebuffer, x, 55 + distance / 4);
+    }
+}
+
+static void draw_sunrise(uint8_t *framebuffer, unsigned frame)
+{
+    // Saturate before integer easing so large frame indices cannot overflow.
+    int progress = frame < 36 ? (int) frame : 36;
+    int rise = 30 * progress * progress * (108 - 2 * progress) / (36 * 36 * 36);
+    int center_y = 60 - rise;
+    for (int y = -12; y <= 12; ++y) {
+        for (int x = -12; x <= 12; ++x) {
+            if (x * x + y * y <= 144 && center_y + y < 48) {
+                set_pixel(framebuffer, 64 + x, center_y + y);
+            }
+        }
+    }
+    static const int rays[][2] = {
+        {-16, 0}, {-14, -8}, {-8, -14}, {0, -16}, {8, -14}, {14, -8}, {16, 0},
+    };
+    if (frame >= 18) {
+        int extension = frame < 42 ? (int) (frame - 18) / 4 + 1 : 7;
+        for (size_t ray = 0; ray < sizeof(rays) / sizeof(rays[0]); ++ray) {
+            int x = rays[ray][0];
+            int y = rays[ray][1];
+            if (center_y + y < 48) {
+                draw_thin_line(framebuffer, 64 + x, center_y + y,
+                               64 + x * (16 + extension) / 16,
+                               center_y + y * (16 + extension) / 16);
+            }
+        }
+    }
+    draw_thin_line(framebuffer, 8, 48, 119, 48);
+    draw_thin_line(framebuffer, 8, 49, 119, 49);
+    draw_thin_line(framebuffer, 45, 54, 83, 54);
+    draw_thin_line(framebuffer, 53, 59, 75, 59);
 }
 
 static void draw_word(uint8_t *framebuffer, const char *word, int top)
@@ -81,10 +164,18 @@ esp_err_t tokki_oled_render_art(uint8_t *framebuffer, size_t size,
                                 tokki_oled_art_t art, unsigned frame)
 {
     if (framebuffer == NULL || size != TOKKI_OLED_FRAME_SIZE ||
-        art < TOKKI_OLED_ART_DRINK_WATER || art > TOKKI_OLED_ART_EXCLAMATION) {
+        art < TOKKI_OLED_ART_DRINK_WATER || art > TOKKI_OLED_ART_SUNRISE) {
         return ESP_ERR_INVALID_ARG;
     }
     memset(framebuffer, 0, size);
+    if (art == TOKKI_OLED_ART_NIGHT_SKY) {
+        draw_night_sky(framebuffer, frame);
+        return ESP_OK;
+    }
+    if (art == TOKKI_OLED_ART_SUNRISE) {
+        draw_sunrise(framebuffer, frame);
+        return ESP_OK;
+    }
     if (art == TOKKI_OLED_ART_DRINK_WATER) {
         draw_word(framebuffer, "Drink", 15);
         draw_word(framebuffer, "water", 37);

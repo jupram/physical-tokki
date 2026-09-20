@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { ChevronDown, ChevronUp, CircleStop, Play, Plus, Save, X } from "lucide-react";
+import { ChevronDown, ChevronUp, CircleStop, Eye, Lightbulb, Play, Plus, Save, Volume2, X } from "lucide-react";
 import {
   CATALOG_BY_ID,
   MEDIA,
@@ -15,6 +15,7 @@ import type { LaneGestures } from "./player";
 type Lanes = Record<Medium, string[]>;
 
 const EMPTY_LANES: Lanes = { oled: [], led: [], speaker: [] };
+const LANE_ICONS = { oled: Eye, led: Lightbulb, speaker: Volume2 };
 
 type Props = {
   initial?: Bundle | null;
@@ -110,11 +111,11 @@ export function BundleComposer({ initial, onSave, onCancelEdit, onPreviewGesture
       <div className="section-heading">
         <div>
           <h2 id="bundle-heading">{editing ? "Edit bundle" : "Bundle composer"}</h2>
-          <p>{editing ? `Editing \u201c${initial?.name}\u201d` : "Concurrent across mediums \u00b7 sequential within a medium"}</p>
+          <p>{editing ? `Editing “${initial?.name}”` : "Eyes, lights, and sound play together · gestures in each lane play in order"}</p>
         </div>
         <div className="composer-head-right">
           <span className="state-pill">
-            {totalCount} gesture{totalCount === 1 ? "" : "s"} \u00b7 {(totalMs / 1000).toFixed(1)}s
+            {totalCount} gesture{totalCount === 1 ? "" : "s"} · {(totalMs / 1000).toFixed(1)}s
           </span>
           {editing && onCancelEdit && (
             <button className="ghost-button" onClick={onCancelEdit} type="button">
@@ -125,52 +126,55 @@ export function BundleComposer({ initial, onSave, onCancelEdit, onPreviewGesture
       </div>
 
       <div className="lane-grid">
-        {MEDIA.map((medium) => (
-          <div className="lane" key={medium}>
-            <div className="lane-head">
-              <span className={`device-icon ${medium === "led" ? "neopixel" : medium}`} />
-              <strong>{MEDIUM_LABEL[medium]}</strong>
-            </div>
+        {MEDIA.map((medium) => {
+          const Icon = LANE_ICONS[medium];
+          return (
+            <div className="lane" key={medium}>
+              <div className="lane-head">
+                <span className={`device-icon ${medium === "led" ? "neopixel" : medium}`}><Icon size={16} /></span>
+                <strong>{MEDIUM_LABEL[medium]}</strong>
+              </div>
 
-            <ol className="lane-seq">
-              {lanes[medium].length === 0 && <li className="lane-empty">Add gestures below</li>}
-              {lanes[medium].map((id, index) => {
-                const gesture = CATALOG_BY_ID[id];
-                return (
-                  <li className="lane-item" key={`${id}-${index}`}>
-                    <span className="lane-step">{index + 1}</span>
-                    <span className="lane-name">{gesture?.name ?? id}</span>
-                    <div className="lane-controls">
-                      <button className="icon-button small" title="Move up" onClick={() => move(medium, index, -1)} disabled={index === 0}>
-                        <ChevronUp size={14} />
-                      </button>
-                      <button className="icon-button small" title="Move down" onClick={() => move(medium, index, 1)} disabled={index === lanes[medium].length - 1}>
-                        <ChevronDown size={14} />
-                      </button>
-                      <button className="icon-button small" title="Remove" onClick={() => removeAt(medium, index)}>
-                        <X size={14} />
-                      </button>
-                    </div>
-                  </li>
-                );
-              })}
-            </ol>
+              <ol className="lane-seq">
+                {lanes[medium].length === 0 && <li className="lane-empty">Add gestures below</li>}
+                {lanes[medium].map((id, index) => {
+                  const gesture = CATALOG_BY_ID[id];
+                  return (
+                    <li className="lane-item" key={`${id}-${index}`}>
+                      <span className="lane-step">{index + 1}</span>
+                      <span className="lane-name">{gesture?.name ?? id}</span>
+                      <div className="lane-controls">
+                        <button className="icon-button small" title="Move up" onClick={() => move(medium, index, -1)} disabled={index === 0}>
+                          <ChevronUp size={14} />
+                        </button>
+                        <button className="icon-button small" title="Move down" onClick={() => move(medium, index, 1)} disabled={index === lanes[medium].length - 1}>
+                          <ChevronDown size={14} />
+                        </button>
+                        <button className="icon-button small" title="Remove" onClick={() => removeAt(medium, index)}>
+                          <X size={14} />
+                        </button>
+                      </div>
+                    </li>
+                  );
+                })}
+              </ol>
 
-            <div className="lane-palette">
-              {gesturesByMedium(medium).map((gesture: GestureDef) => (
-                <button
-                  className="palette-chip"
-                  key={gesture.id}
-                  title={`Add ${gesture.name}`}
-                  onClick={() => add(medium, gesture.id)}
-                  type="button"
-                >
-                  <Plus size={13} /> {gesture.name}
-                </button>
-              ))}
+              <div className="lane-palette">
+                {gesturesByMedium(medium).map((gesture: GestureDef) => (
+                  <button
+                    className="palette-chip"
+                    key={gesture.id}
+                    title={`Add ${gesture.name}`}
+                    onClick={() => add(medium, gesture.id)}
+                    type="button"
+                  >
+                    <Plus size={13} /> {gesture.name}
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className="bundle-preview">
@@ -184,6 +188,7 @@ export function BundleComposer({ initial, onSave, onCancelEdit, onPreviewGesture
             className="composer-input"
             value={name}
             placeholder="Bundle name (e.g. Hydration nudge)"
+            aria-label="Bundle name"
             onChange={(event) => setName(event.target.value)}
           />
           <button className="primary-button" onClick={save} disabled={!name.trim() || totalCount === 0} type="button">

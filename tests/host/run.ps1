@@ -77,6 +77,7 @@ try {
             "$repo\components\tokki_runtime\tokki_idle.c"
             "$repo\components\tokki_neopixel\neopixel_effects.c"
             "$repo\components\tokki_oled\pet_eyes.c"
+            "$repo\components\tokki_oled\oled_art.c"
         )
         & cl.exe /nologo /TC /std:c11 /W4 /WX @includes $runtimeInclude @workerSources /Fetokki-workers.exe
         if ($LASTEXITCODE -ne 0) { throw 'Worker host test compilation failed.' }

@@ -7,7 +7,7 @@
 
 #define TOKKI_IDLE_FRAME_MS 60
 #define TOKKI_IDLE_RETRY_MS 5000
-#define TOKKI_IDLE_EYE_VARIANTS 8
+#define TOKKI_IDLE_EYE_VARIANTS 9
 
 typedef struct {
     uint32_t random_state;
