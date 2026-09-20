@@ -12,7 +12,6 @@
 #include "freertos/FreeRTOS.h"
 #include "tokki_board.h"
 
-#define SPEAKER_TONE_DURATION_MS 300
 #define SPEAKER_SILENCE_DURATION_MS 250
 #define SPEAKER_FRAMES_PER_BUFFER 128
 
@@ -30,11 +29,6 @@ extern const uint8_t dog_bark_wav_start[]
     asm("_binary_dog_bark_wav_start");
 extern const uint8_t dog_bark_wav_end[]
     asm("_binary_dog_bark_wav_end");
-
-extern const uint8_t dog_bark_cc0_wav_start[]
-    asm("_binary_dog_bark_cc0_wav_start");
-extern const uint8_t dog_bark_cc0_wav_end[]
-    asm("_binary_dog_bark_cc0_wav_end");
 
 static uint16_t read_u16_le(const uint8_t *data)
 {
@@ -252,13 +246,15 @@ static esp_err_t play_sound(bool self_test, tokki_speaker_sound_t sound)
         err = write_silence(channel, SPEAKER_SILENCE_DURATION_MS);
     }
 
-    static const unsigned int test_frequencies[] = {440, 660, 880};
+    static const unsigned int test_frequencies[] = {
+        SPEAKER_TONE_LOW_HZ, SPEAKER_TONE_MID_HZ, SPEAKER_TONE_HIGH_HZ,
+    };
         for (size_t index = 0;
             self_test && err == ESP_OK &&
             index < sizeof(test_frequencies) / sizeof(test_frequencies[0]);
             ++index) {
            err = write_tone(channel, test_frequencies[index], test_frequencies[index],
-                         SPEAKER_TONE_DURATION_MS, 100);
+                         SPEAKER_REFERENCE_TONE_DURATION_MS, 100);
         if (err == ESP_OK) {
             err = write_silence(channel, SPEAKER_SILENCE_DURATION_MS);
         }
@@ -271,9 +267,6 @@ static esp_err_t play_sound(bool self_test, tokki_speaker_sound_t sound)
         } else if (sound == TOKKI_SPEAKER_DRINK_WATER) {
             err = write_speech(channel, drink_water_wav_start,
                                 drink_water_wav_end - drink_water_wav_start);
-        } else if (sound == TOKKI_SPEAKER_BARK) {
-        err = write_speech(channel, dog_bark_cc0_wav_start,
-                dog_bark_cc0_wav_end - dog_bark_cc0_wav_start);
         } else if (sound == TOKKI_SPEAKER_DOG_BARK) {
             err = write_speech(channel, dog_bark_wav_start,
                                 dog_bark_wav_end - dog_bark_wav_start);
@@ -319,7 +312,7 @@ esp_err_t speaker_test_run(void)
 
 esp_err_t tokki_speaker_play(tokki_speaker_sound_t sound)
 {
-    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_BARK) {
+    if (sound < TOKKI_SPEAKER_DRINK_WATER || sound > TOKKI_SPEAKER_TONE_RISE) {
         return ESP_ERR_INVALID_ARG;
     }
     return play_sound(false, sound);

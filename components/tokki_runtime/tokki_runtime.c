@@ -4,6 +4,7 @@
 
 #include "driver/uart.h"
 #include "esp_log.h"
+#include "esp_random.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
@@ -75,9 +76,14 @@ static void execute_actions(void *context)
 {
     tokki_device_t device = *(tokki_device_t *) context;
     ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-    tokki_idle_t idle;
+    tokki_idle_t idle = {0};
+    tokki_idle_neopixel_t neopixel_idle = {0};
+    TimeOut_t idle_timeout;
+    TickType_t idle_wait = 0;
     if (device == TOKKI_DEVICE_OLED) {
-        tokki_idle_reset(&idle);
+        tokki_idle_reset(&idle, esp_random());
+    } else if (device == TOKKI_DEVICE_NEOPIXEL) {
+        tokki_idle_neopixel_reset(&neopixel_idle, esp_random());
     }
     for (;;) {
         tokki_job_t job;
@@ -96,26 +102,37 @@ static void execute_actions(void *context)
                 ESP_LOGE(TAG, "%s failed: %s", job.action_id, esp_err_to_name(result));
             }
             if (device == TOKKI_DEVICE_OLED) {
-                tokki_idle_reset(&idle);
+                tokki_idle_reset(&idle, esp_random());
+            } else if (device == TOKKI_DEVICE_NEOPIXEL) {
+                tokki_idle_neopixel_reset(&neopixel_idle, esp_random());
             }
+            idle_wait = 0;
             continue;
         }
 
-        if (device != TOKKI_DEVICE_OLED) {
+        if (device != TOKKI_DEVICE_OLED && device != TOKKI_DEVICE_NEOPIXEL) {
             ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
             continue;
         }
-        esp_err_t result = tokki_idle_step(&idle);
+        /* Other devices' notifications must not shorten a frame, rest, or retry. */
+        if (idle_wait > 0 && xTaskCheckForTimeOut(&idle_timeout, &idle_wait) == pdFALSE) {
+            ulTaskNotifyTake(pdTRUE, idle_wait);
+            continue;
+        }
+        esp_err_t result = device == TOKKI_DEVICE_OLED ?
+                           tokki_idle_step(&idle) : tokki_idle_neopixel_step(&neopixel_idle);
         if (result != ESP_OK) {
             indicate_failure();
             xSemaphoreTake(s_lock, portMAX_DELAY);
             tokki_protocol_idle_error(&s_protocol, result);
             xSemaphoreGive(s_lock);
-            ESP_LOGW(TAG, "Idle display failed: %s; retrying in 5 seconds", esp_err_to_name(result));
+            ESP_LOGW(TAG, "Idle %s failed: %s; retrying in 5 seconds",
+                     tokki_device_name(device), esp_err_to_name(result));
         }
-        /* A newly queued command wakes this wait immediately, including on OLED failure. */
-        ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(
-            result == ESP_OK ? TOKKI_IDLE_FRAME_MS : TOKKI_IDLE_RETRY_MS));
+        unsigned delay_ms = result != ESP_OK ? TOKKI_IDLE_RETRY_MS :
+                            device == TOKKI_DEVICE_OLED ? TOKKI_IDLE_FRAME_MS : neopixel_idle.delay_ms;
+        idle_wait = pdMS_TO_TICKS(delay_ms);
+        vTaskSetTimeOutState(&idle_timeout);
     }
 }
 

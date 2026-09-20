@@ -1,11 +1,23 @@
 #include "tokki_neopixel.h"
 
+#include <limits.h>
+
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 
 #define TOKKI_NEOPIXEL_RAINBOW_BRIGHTNESS 32
 #define TOKKI_NEOPIXEL_RAINBOW_STEPS 128
 #define TOKKI_NEOPIXEL_RAINBOW_FRAME_MS 20
+
+esp_err_t tokki_neopixel_fade_step(bool teal, unsigned step, unsigned half_steps)
+{
+    if (half_steps == 0 || half_steps > UINT_MAX / 2 || step > half_steps * 2) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    unsigned distance = step <= half_steps ? step : half_steps * 2 - step;
+    uint8_t brightness = (uint8_t) ((uint64_t) 32 * distance / half_steps);
+    return tokki_neopixel_set_color(0, teal ? brightness : 0, brightness);
+}
 
 static void rainbow_color(uint8_t position,
                           uint8_t *red,

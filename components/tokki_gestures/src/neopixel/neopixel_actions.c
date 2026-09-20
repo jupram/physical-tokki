@@ -39,9 +39,7 @@ static esp_err_t run_neopixel_blink_green(void)
 static esp_err_t fade_color(bool teal, unsigned half_steps)
 {
     for (unsigned step = 0; step <= half_steps * 2; ++step) {
-        unsigned distance = step <= half_steps ? step : half_steps * 2 - step;
-        uint8_t brightness = (uint8_t) (32 * distance / half_steps);
-        esp_err_t err = tokki_neopixel_set_color(0, teal ? brightness : 0, brightness);
+        esp_err_t err = tokki_neopixel_fade_step(teal, step, half_steps);
         if (err != ESP_OK) {
             return err;
         }

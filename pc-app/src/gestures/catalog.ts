@@ -16,6 +16,8 @@ export type OledEyes =
   | "look_up"
   | "look_down"
   | "sleepy"
+  | "lovey_dovey"
+  | "shy"
   | "blink";
 
 export type OledArt =
@@ -34,7 +36,9 @@ export type OledSim =
 export type LedEffect = "solid" | "blink" | "breathe" | "rainbow";
 export type LedSim = { effect: LedEffect; color: string };
 
-export type SpeakerSound = "drink_water" | "chirp" | "alert" | "chime" | "ping";
+export type SpeakerSound =
+  | "drink_water" | "chirp" | "alert" | "chime" | "ping"
+  | "tone_low" | "tone_mid" | "tone_high" | "tone_rise";
 export type SpeakerSim = { sound: SpeakerSound };
 
 export type GestureSim = { oled?: OledSim; led?: LedSim; speaker?: SpeakerSim };
@@ -109,6 +113,8 @@ export const CATALOG: GestureDef[] = [
   eyes("oled.look_up", "Look up", "look_up", 1440),
   eyes("oled.look_down", "Look down", "look_down", 1440),
   eyes("oled.sleepy", "Sleepy eyes", "sleepy", 1440),
+  eyes("oled.lovey_dovey", "Lovey-dovey eyes", "lovey_dovey", 4320),
+  eyes("oled.shy", "Shy eyes", "shy", 4320),
 
   // OLED art
   art("oled.drink_water", "Drink water message", "drink_water", 2000),
@@ -125,6 +131,10 @@ export const CATALOG: GestureDef[] = [
   speaker("speaker.alert", "Short alert tone", "alert", 900),
   speaker("speaker.chime", "Completion chime", "chime", 1100),
   speaker("speaker.ping", "Short ping", "ping", 500),
+  speaker("speaker.tone_low", "Warm tone (440 Hz)", "tone_low", 800),
+  speaker("speaker.tone_mid", "Clear tone (660 Hz)", "tone_mid", 800),
+  speaker("speaker.tone_high", "Bright tone (880 Hz)", "tone_high", 800),
+  speaker("speaker.tone_rise", "Rising tones (440/660/880 Hz)", "tone_rise", 1220),
 ];
 
 export const CATALOG_BY_ID: Record<string, GestureDef> = Object.fromEntries(

@@ -18,14 +18,25 @@ const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size
     static const speaker_tone_step_t ping[] = {{1320, 1320, 100, 0, 100}};
     static const speaker_tone_step_t bubble[] = {{1200, 480, 90, 0, 100}};
     static const speaker_tone_step_t whistle[] = {{900, 2100, 280, 0, 100}};
-    static const speaker_tone_step_t sigh[] = {{850, 350, 360, 0, 100}};
-    static const speaker_tone_step_t boing[] = {{350, 900, 100, 0, 100}, {900, 500, 140, 0, 100}};
+    static const speaker_tone_step_t tone_low[] = {
+        {SPEAKER_TONE_LOW_HZ, SPEAKER_TONE_LOW_HZ, SPEAKER_REFERENCE_TONE_DURATION_MS, 0, 100},
+    };
+    static const speaker_tone_step_t tone_mid[] = {
+        {SPEAKER_TONE_MID_HZ, SPEAKER_TONE_MID_HZ, SPEAKER_REFERENCE_TONE_DURATION_MS, 0, 100},
+    };
     static const speaker_tone_step_t question[] = {{700, 700, 90, 50, 100}, {950, 1250, 180, 0, 100}};
-    static const speaker_tone_step_t downstep[] = {{740, 740, 130, 40, 100}, {494, 494, 190, 0, 100}};
+    static const speaker_tone_step_t tone_high[] = {
+        {SPEAKER_TONE_HIGH_HZ, SPEAKER_TONE_HIGH_HZ, SPEAKER_REFERENCE_TONE_DURATION_MS, 0, 100},
+    };
     static const speaker_tone_step_t sparkle[] = {{1047, 1047, 70, 30, 100}, {1319, 1319, 70, 30, 100}, {1568, 1568, 130, 0, 100}};
     static const speaker_tone_step_t trill[] = {{1400, 1700, 70, 25, 100}, {1400, 1700, 70, 25, 100}, {1400, 1700, 70, 0, 100}};
     static const speaker_tone_step_t knock[] = {{500, 200, 65, 100, 100}, {500, 200, 65, 0, 100}};
     static const speaker_tone_step_t sonar[] = {{880, 880, 120, 110, 100}, {880, 880, 120, 0, 40}};
+    static const speaker_tone_step_t tone_rise[] = {
+        {SPEAKER_TONE_LOW_HZ, SPEAKER_TONE_LOW_HZ, 200, 60, 100},
+        {SPEAKER_TONE_MID_HZ, SPEAKER_TONE_MID_HZ, 200, 60, 100},
+        {SPEAKER_TONE_HIGH_HZ, SPEAKER_TONE_HIGH_HZ, 200, 0, 100},
+    };
     if (count == NULL) {
         return NULL;
     }
@@ -49,18 +60,18 @@ const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size
     case TOKKI_SPEAKER_WHISTLE:
         *count = sizeof(whistle) / sizeof(whistle[0]);
         return whistle;
-    case TOKKI_SPEAKER_SIGH:
-        *count = sizeof(sigh) / sizeof(sigh[0]);
-        return sigh;
-    case TOKKI_SPEAKER_BOING:
-        *count = sizeof(boing) / sizeof(boing[0]);
-        return boing;
+    case TOKKI_SPEAKER_TONE_LOW:
+        *count = sizeof(tone_low) / sizeof(tone_low[0]);
+        return tone_low;
+    case TOKKI_SPEAKER_TONE_MID:
+        *count = sizeof(tone_mid) / sizeof(tone_mid[0]);
+        return tone_mid;
     case TOKKI_SPEAKER_QUESTION:
         *count = sizeof(question) / sizeof(question[0]);
         return question;
-    case TOKKI_SPEAKER_DOWNSTEP:
-        *count = sizeof(downstep) / sizeof(downstep[0]);
-        return downstep;
+    case TOKKI_SPEAKER_TONE_HIGH:
+        *count = sizeof(tone_high) / sizeof(tone_high[0]);
+        return tone_high;
     case TOKKI_SPEAKER_SPARKLE:
         *count = sizeof(sparkle) / sizeof(sparkle[0]);
         return sparkle;
@@ -73,6 +84,9 @@ const speaker_tone_step_t *speaker_sound_steps(tokki_speaker_sound_t sound, size
     case TOKKI_SPEAKER_SONAR:
         *count = sizeof(sonar) / sizeof(sonar[0]);
         return sonar;
+    case TOKKI_SPEAKER_TONE_RISE:
+        *count = sizeof(tone_rise) / sizeof(tone_rise[0]);
+        return tone_rise;
     default:
         return NULL;
     }
