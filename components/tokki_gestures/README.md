@@ -48,6 +48,9 @@ assignments in `tokki_board`.
 | `oled.exclamation` | 1.53 s | Exclamation mark grows into view, then restores happy eyes |
 | `oled.lovey_dovey` | 4.32 s | Heart pupils pulse twice, close into a smile, then restore centered happy eyes |
 | `oled.shy` | 4.32 s | Lowered lids and an inward/downward gaze, a hesitant peek, then centered happy eyes |
+| `oled.night_sky` | 4.32 s | Twinkling stars, a crescent moon, low hills and one shooting star, then centered happy eyes |
+| `oled.sunrise` | 5.76 s | Sun eases above a horizon, rays extend, holds the morning scene, then centered happy eyes |
+| `oled.sleeping` | 4.32 s | Eyes close into relaxed crescents with floating Zzz, gently bob, then reopen |
 | `speaker.drink_water` | About 2.23 s | 1.73 s offline-generated phrase plus silence |
 | `speaker.chirp` | About 0.82 s | Two rising bird-like synthesized chirps plus silence |
 | `speaker.alert` | About 0.68 s | Short 660 Hz alert plus silence |
@@ -66,8 +69,8 @@ assignments in `tokki_board`.
 | `speaker.sonar` | About 0.85 s | Two pings, second at 40% relative gain, plus gap/silence |
 | `speaker.tone_rise` | About 1.22 s | 440/660/880 Hz, 200 ms per note, two 60 ms gaps, plus silence |
 
-There are 44 actions (20 OLED, 6 NeoPixel, 1 status LED, 17 speaker), of which 42
-are new relative to the initial scaffold. Lovey-dovey and shy eyes are included.
+There are 47 actions (23 OLED, 6 NeoPixel, 1 status LED, 17 speaker), of which 45
+are new relative to the initial scaffold. Lovey-dovey, shy, sleeping, night sky, and sunrise are included.
 The self-test-frequency tones replace `speaker.sigh`, `speaker.boing`,
 `speaker.downstep`, and `speaker.bark`; those four IDs are no longer discovered
 or accepted. Update saved commands to the new IDs above.
@@ -85,7 +88,7 @@ The original 25 manually triggered OLED, status LED, and NeoPixel gestures run 5
 longer than the initial prototype. Frame/hold delays are scaled, preserving
 the original frame counts, colors, brightness, and successful final states.
 OLED frames use 90 ms; light blinks use 300 ms on/off; RGB fades use 60 ms;
-rainbow uses 30 ms per step. Lovey-dovey and shy also use 90 ms per frame.
+rainbow uses 30 ms per step. Lovey-dovey, shy, sleeping, night sky, and sunrise also use 90 ms per frame.
 Idle frames still use 60 ms; speaker sounds and standalone self-test timing
 are unchanged. The default rainbow driver API keeps its
 20 ms steps; the gesture uses the timed variant.
@@ -115,8 +118,15 @@ apply only on success; failed LED writes cannot guarantee that the LED is off.
 The first eight OLED actions retain their final frame; new transient OLED
 actions explicitly restore centered happy eyes. No action starts an idle loop
 or background animation task. The separate production runtime resumes each
-device's idle behavior after its own queue drains: shuffled eyes with calm
-holds, and occasional 1.98-second teal breaths with 6-14-second dark pauses.
+device's idle behavior after its own queue drains: nine shuffled eye/sequence choices
+with 0.6-1.2-second calm holds, and occasional 1.98-second teal breaths with
+6-14-second dark pauses. Sleeping eyes and night sky are one ordered idle
+sequence: 48 frames (2.88 seconds) each, with no open-eye pause between them.
+The sleep portion holds its closed pose instead of reopening; the sky restores
+open eyes at the end. Night sky is never independently selected in idle.
+Both portions yield between frames to incoming OLED commands, without calling
+the blocking manual action wrappers. Manual gestures are unchanged, and sunrise
+remains manual.
 Idle intentionally replaces the last commanded OLED/NeoPixel output and
 yields to new commands on that device. The same delay-free fade primitive
 serves manual and idle breathing. RGB fades and blinks are capped at 32/255 per

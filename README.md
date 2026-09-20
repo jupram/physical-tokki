@@ -30,10 +30,15 @@ The root ESP-IDF application initializes the shared board, LED, and NeoPixel,
 serves the gesture registry over USB serial, and accepts manual playback
 commands from the desktop app. Each device has its own worker, with four
 shared waiting queue slots. While idle, the OLED shuffles blinks, glances,
-happy, curious, lovey-dovey, and shy eyes, with 0.6-1.2 seconds of calm open
-eyes between animations. Every expression gets a turn before reshuffling;
+happy, curious, lovey-dovey, shy, and a paired sleeping-eyes-to-night-sky
+sequence, with 0.6-1.2 seconds of calm open eyes between choices. All nine
+choices get a turn before reshuffling;
 the same shuffled choice never plays twice in a row. Each left/right glance
 also finishes with a soft 0.54-second blink before the calm pause.
+Night sky only follows sleeping eyes with floating Zzz, immediately and without
+an intervening open-eye pause. Each part runs for 2.88 seconds at the idle
+60 ms frame interval; the eyes stay closed until the sky starts, then return
+to open eyes after the sky. Sunrise remains a manual gesture.
 
 Independently, the NeoPixel plays occasional 1.98-second teal breaths with
 6-14-second dark pauses, capped at 32/255 per green/blue channel. This reuses
@@ -105,12 +110,13 @@ npm run build
 cargo test --manifest-path .\src-tauri\Cargo.toml
 ```
 
-The host suite covers all 44 gestures, including lovey-dovey and shy eyes,
+The host suite covers all 47 gestures, including lovey-dovey, shy and sleeping eyes,
+twinkling night sky and sunrise scenes,
 the unchanged twice-repeated bark and the four clean self-test-frequency tones,
 and additionally checks
 protocol framing, complete paginated discovery, bounded per-device FIFO
 execution, cross-device dispatch, lifecycle events, malformed input recovery,
-shuffled idle expression coverage, breathing brightness/pause bounds, and
+shuffled idle eye/scene coverage, sleeping/night-sky preemption, breathing brightness/pause bounds, and
 worker preemption/deadline handling (including timer wraparound).
 The UART/FreeRTOS adapter and actual peripherals still need an on-device
 smoke test: observe several shuffled eye rounds and breathing pauses, send

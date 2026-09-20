@@ -1,0 +1,14 @@
+.pv-sleeping {
+  display: block;
+  width: 100%;
+  height: 100%;
+  fill: var(--cp-display-fg);
+}
+
+.pv-sleep-z {
+  fill: none;
+  stroke: var(--cp-display-fg);
+  stroke-width: 1;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}

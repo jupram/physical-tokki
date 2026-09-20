@@ -16,6 +16,7 @@ export type OledEyes =
   | "look_up"
   | "look_down"
   | "sleepy"
+  | "sleeping"
   | "lovey_dovey"
   | "shy"
   | "blink";
@@ -27,7 +28,9 @@ export type OledArt =
   | "checkmark"
   | "thinking"
   | "heart"
-  | "exclamation";
+  | "exclamation"
+  | "night_sky"
+  | "sunrise";
 
 export type OledSim =
   | { kind: "eyes"; eyes: OledEyes }
@@ -113,6 +116,7 @@ export const CATALOG: GestureDef[] = [
   eyes("oled.look_up", "Look up", "look_up", 1440),
   eyes("oled.look_down", "Look down", "look_down", 1440),
   eyes("oled.sleepy", "Sleepy eyes", "sleepy", 1440),
+  eyes("oled.sleeping", "Sleeping eyes (Zzz)", "sleeping", 4320),
   eyes("oled.lovey_dovey", "Lovey-dovey eyes", "lovey_dovey", 4320),
   eyes("oled.shy", "Shy eyes", "shy", 4320),
 
@@ -124,6 +128,8 @@ export const CATALOG: GestureDef[] = [
   art("oled.thinking", "Thinking dots", "thinking", 1200),
   art("oled.heart", "Heart pulse", "heart", 1440),
   art("oled.exclamation", "Exclamation mark", "exclamation", 1020),
+  art("oled.night_sky", "Night sky", "night_sky", 4320),
+  art("oled.sunrise", "Sunrise", "sunrise", 5760),
 
   // Speaker
   speaker("speaker.drink_water", "Drink water phrase", "drink_water", 1400),
