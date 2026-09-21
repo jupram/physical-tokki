@@ -41,9 +41,6 @@ function OledView({ sim, active }: { sim?: OledSim; active: boolean }) {
       </div>
     );
   }
-  if (sim.art === "night_sky" || sim.art === "sunrise") {
-    return <SkyPreview key={sim.art} scene={sim.art} active={active} />;
-  }
   if (sim.kind === "marquee") {
     const width = sim.text.length * 12 - 2;
     const durationMs = Math.ceil((128 + width) / 2) * 45;
@@ -55,6 +52,9 @@ function OledView({ sim, active }: { sim?: OledSim; active: boolean }) {
         {sim.text}
       </span>
     );
+  }
+  if (sim.art === "night_sky" || sim.art === "sunrise") {
+    return <SkyPreview key={sim.art} scene={sim.art} active={active} />;
   }
   const emoji = sim.art === "water_drop" || sim.art === "fire";
   return <span className={`pv-art ${sim.art}${emoji ? " emoji" : ""}`}>{ART_GLYPH[sim.art]}</span>;

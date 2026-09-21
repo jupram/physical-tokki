@@ -9,10 +9,10 @@ describe("offline gesture catalog", () => {
       return result;
     }, {});
 
-    expect(CATALOG).toHaveLength(42);
-    expect(new Set(CATALOG.map((gesture) => gesture.id))).toHaveLength(42);
+    expect(CATALOG).toHaveLength(47);
+    expect(new Set(CATALOG.map((gesture) => gesture.id))).toHaveLength(47);
     expect(counts).toEqual({
-      oled: 18,
+      oled: 23,
       neopixel: 6,
       led: 1,
       speaker: 17,
@@ -24,13 +24,9 @@ describe("offline gesture catalog", () => {
       "speaker.dog_bark",
       "speaker.bubble",
       "speaker.whistle",
-      "speaker.sigh",
-      "speaker.boing",
       "speaker.question",
-      "speaker.downstep",
       "speaker.sparkle",
       "speaker.trill",
-      "speaker.bark",
       "speaker.knock",
       "speaker.sonar",
     ];

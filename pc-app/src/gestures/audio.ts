@@ -125,20 +125,9 @@ export function playSound(sound: SpeakerSound): () => void {
     case "whistle":
       sweep(ctx, t, 900, 2100, 280);
       break;
-    case "sigh":
-      sweep(ctx, t, 850, 350, 360, 0.08);
-      break;
-    case "boing":
-      sweep(ctx, t, 320, 780, 100);
-      sweep(ctx, t + 0.1, 780, 260, 140);
-      break;
     case "question":
       tone(ctx, t, 540, 110);
       sweep(ctx, t + 0.14, 620, 980, 160);
-      break;
-    case "downstep":
-      tone(ctx, t, 700, 150);
-      tone(ctx, t + 0.18, 470, 170);
       break;
     case "sparkle":
       tone(ctx, t, 880, 90);
@@ -149,9 +138,6 @@ export function playSound(sound: SpeakerSound): () => void {
       sweep(ctx, t, 1100, 1600, 70);
       sweep(ctx, t + 0.09, 1100, 1600, 70);
       sweep(ctx, t + 0.18, 1100, 1600, 70);
-      break;
-    case "bark":
-      sweep(ctx, t, 390, 100, 500, 0.14);
       break;
     case "knock":
       sweep(ctx, t, 180, 70, 65, 0.14);
