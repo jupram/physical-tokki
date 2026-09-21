@@ -20,6 +20,21 @@ export interface Snapshot {
   activity: Activity[];
   lastError: string | null;
 }
+export interface NotificationSnapshot {
+  supported: boolean;
+  permission: "unknown" | "unspecified" | "allowed" | "denied" | "unsupported";
+  enabled: boolean;
+  pending: number;
+  queued: QueuedNotification[];
+  lastEvent: string | null;
+  lastError: string | null;
+}
+export interface QueuedNotification {
+  source: string;
+  text: string;
+  sound: string;
+  color: "blue" | "purple" | "yellow";
+}
 export const emptySnapshot: Snapshot = {
   revision: 0, status: "disconnected", port: null, hello: null, actions: [], activity: [], lastError: null,
 };
@@ -55,6 +70,10 @@ export function createClient(native: boolean, call: typeof invoke = invoke) {
     disconnect: () => nativeCall<void>("serial_disconnect"),
     refresh: () => nativeCall<void>("serial_refresh"),
     run: (actionId: string) => nativeCall<void>("serial_run", { actionId }),
+    marquee: (text: string) => nativeCall<void>("serial_marquee", { text }),
+    notificationSnapshot: () => nativeCall<NotificationSnapshot>("notification_snapshot"),
+    requestNotificationAccess: () => nativeCall<NotificationSnapshot>("notification_request_access"),
+    setNotificationRelay: (enabled: boolean) => nativeCall<void>("notification_set_enabled", { enabled }),
   };
 }
 

@@ -34,7 +34,6 @@ static esp_err_t initialize_display(void)
     esp_lcd_panel_io_i2c_config_t io_config = {
         .dev_addr = 0x3C,
         .scl_speed_hz = 400000,
-        .transaction_timeout_ms = 1000,
         .control_phase_bytes = 1,
         .dc_bit_offset = 6,
         .lcd_cmd_bits = 8,
@@ -45,7 +44,6 @@ static esp_err_t initialize_display(void)
     }
     esp_lcd_panel_ssd1306_config_t ssd1306_config = {
         .height = TOKKI_OLED_HEIGHT,
-        .contrast = 160,
     };
     esp_lcd_panel_dev_config_t panel_config = {
         .reset_gpio_num = GPIO_NUM_NC,

@@ -36,6 +36,18 @@ function OledView({ sim }: { sim?: OledSim }) {
       </div>
     );
   }
+  if (sim.kind === "marquee") {
+    const width = sim.text.length * 12 - 2;
+    const durationMs = Math.ceil((128 + width) / 2) * 45;
+    return (
+      <span
+        className="pv-marquee"
+        style={{ "--marquee-duration": `${durationMs}ms` } as React.CSSProperties}
+      >
+        {sim.text}
+      </span>
+    );
+  }
   const emoji = sim.art === "water_drop" || sim.art === "fire";
   return <span className={`pv-art ${sim.art}${emoji ? " emoji" : ""}`}>{ART_GLYPH[sim.art]}</span>;
 }

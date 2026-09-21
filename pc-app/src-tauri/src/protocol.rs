@@ -5,6 +5,7 @@ pub const PREFIX: &[u8] = b"TOKKI/1 ";
 pub const MAX_FRAME: usize = 1024;
 pub const MAX_ACTIONS: usize = 4096;
 pub const MAX_ACTION_ID: usize = 96;
+pub const MAX_MARQUEE_TEXT: usize = 40;
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -73,6 +74,14 @@ pub fn valid_id(id: &str) -> bool {
 
 pub fn valid_action_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= MAX_ACTION_ID && !id.contains('\0')
+}
+
+pub fn valid_marquee_text(text: &str) -> bool {
+    !text.is_empty()
+        && text.len() <= MAX_MARQUEE_TEXT
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_graphic() || byte == b' ')
 }
 
 pub fn request(id: &str, method: &str, params: Value) -> Result<Vec<u8>, String> {
@@ -318,6 +327,11 @@ mod tests {
         assert!(request("Az09_.:-", "hello", json!({})).is_ok());
         for invalid in ["has space", "a\nb", "a\0b", "a/b", "a\"b"] {
             assert!(request(invalid, "hello", json!({})).is_err());
+        }
+        assert!(valid_marquee_text("Teams: Build 42!"));
+        assert!(valid_marquee_text(&"x".repeat(40)));
+        for invalid in ["", "line\nbreak", "café", &"x".repeat(41)] {
+            assert!(!valid_marquee_text(invalid));
         }
     }
 

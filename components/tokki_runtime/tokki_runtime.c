@@ -1,6 +1,7 @@
 #include "tokki_runtime.h"
 
 #include <stdio.h>
+#include <string.h>
 
 #include "driver/uart.h"
 #include "esp_log.h"
@@ -11,7 +12,13 @@
 #include "tokki_gestures.h"
 #include "tokki_idle.h"
 #include "tokki_led.h"
+#include "tokki_neopixel.h"
+#include "tokki_oled.h"
 #include "tokki_protocol.h"
+
+#define MARQUEE_ACTION_ID "oled.marquee"
+#define MARQUEE_FRAME_MS 45
+#define MARQUEE_STEP_PIXELS 2
 
 static const char *TAG = "tokki_runtime";
 static tokki_protocol_t s_protocol;
@@ -71,6 +78,55 @@ static void receive_commands(void *context)
     }
 }
 
+static esp_err_t run_marquee(const char *text)
+{
+    _Static_assert(TOKKI_MARQUEE_TEXT_MAX == TOKKI_OLED_MARQUEE_MAX,
+                   "Protocol and OLED marquee limits must match");
+    int width = tokki_oled_marquee_width(text);
+    if (width == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    uint8_t framebuffer[TOKKI_OLED_FRAME_SIZE];
+    for (int left = TOKKI_OLED_WIDTH; left > -width; left -= MARQUEE_STEP_PIXELS) {
+        esp_err_t result = tokki_oled_render_marquee(framebuffer, sizeof(framebuffer), text, left);
+        if (result == ESP_OK) {
+            result = tokki_oled_draw_frame(framebuffer, sizeof(framebuffer));
+        }
+        if (result != ESP_OK) {
+            return result;
+        }
+        vTaskDelay(pdMS_TO_TICKS(MARQUEE_FRAME_MS));
+    }
+    return ESP_OK;
+}
+
+static esp_err_t run_notification_light(const tokki_job_t *job)
+{
+    uint8_t red = 0;
+    uint8_t green = 0;
+    uint8_t blue = 32;
+    if (strcmp(job->action_id, TOKKI_NOTIFICATION_LIGHT_PURPLE_ACTION_ID) == 0) {
+        red = 24;
+        blue = 32;
+    } else if (strcmp(job->action_id, TOKKI_NOTIFICATION_LIGHT_YELLOW_ACTION_ID) == 0) {
+        red = 32;
+        green = 24;
+        blue = 0;
+    }
+    int width = tokki_oled_marquee_width(job->text);
+    if (width == 0) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t result = tokki_neopixel_set_color(red, green, blue);
+    if (result != ESP_OK) {
+        return result;
+    }
+    for (int left = TOKKI_OLED_WIDTH; left > -width; left -= MARQUEE_STEP_PIXELS) {
+        vTaskDelay(pdMS_TO_TICKS(MARQUEE_FRAME_MS));
+    }
+    return tokki_neopixel_set_color(0, 0, 0);
+}
+
 static void execute_actions(void *context)
 {
     tokki_device_t device = *(tokki_device_t *) context;
@@ -85,7 +141,16 @@ static void execute_actions(void *context)
         bool pending = tokki_protocol_start_next_for_device(&s_protocol, device, &job);
         xSemaphoreGive(s_lock);
         if (pending) {
-            esp_err_t result = tokki_action_run(job.action_id);
+            esp_err_t result;
+            if (strcmp(job.action_id, MARQUEE_ACTION_ID) == 0) {
+                result = run_marquee(job.text);
+            } else if (strcmp(job.action_id, TOKKI_NOTIFICATION_LIGHT_BLUE_ACTION_ID) == 0 ||
+                       strcmp(job.action_id, TOKKI_NOTIFICATION_LIGHT_PURPLE_ACTION_ID) == 0 ||
+                       strcmp(job.action_id, TOKKI_NOTIFICATION_LIGHT_YELLOW_ACTION_ID) == 0) {
+                result = run_notification_light(&job);
+            } else {
+                result = tokki_action_run(job.action_id);
+            }
             if (result != ESP_OK) {
                 indicate_failure();
             }

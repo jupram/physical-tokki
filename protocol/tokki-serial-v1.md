@@ -104,6 +104,40 @@ later queued actions. Reception, `hello`, and discovery continue during
 playback. Do not automatically retry `action.run` after a response timeout:
 delivery may have succeeded and retrying could play the gesture twice.
 
+### `oled.marquee`
+
+Queues one parameterized OLED marquee without adding dynamic content to the
+fixed gesture catalog. `params` must contain only `text`, with 1 to 40 printable
+ASCII characters (`0x20` through `0x7E`).
+
+```text
+TOKKI/1 {"id":"4","method":"oled.marquee","params":{"text":"Teams: Build 42!"}}
+```
+
+The response and `action.started`/`action.completed`/`action.failed` lifecycle
+contract is the same as `action.run`, with `actionId:"oled.marquee"`. The OLED
+worker scrolls the text from right to left once, then autonomous idle resumes.
+Marquees use the OLED device's FIFO ordering and the shared four-slot waiting
+queue. Clients must not retry after an ambiguous timeout.
+
+### `neopixel.notification`
+
+Queues a parameterized NeoPixel color for the duration of the corresponding
+OLED marquee without adding dynamic notification entries to the fixed action
+catalog. `params` must contain only the same validated `text` used for
+`oled.marquee` and a `color` of `blue`, `purple`, or `yellow`.
+
+```text
+TOKKI/1 {"id":"5","method":"neopixel.notification","params":{"text":"Teams: Build 42!","color":"purple"}}
+```
+
+The lifecycle contract matches `action.run`. Its action ID is
+`neopixel.notification.<color>`. The NeoPixel worker turns the selected color
+on, waits for the exact number of 45 ms frames used by one OLED marquee scroll,
+then turns the NeoPixel off. Send this request with the matching `oled.marquee`
+and speaker `action.run`; separate device workers execute them concurrently.
+It uses the NeoPixel device's FIFO ordering and shared waiting queue.
+
 ### `action.stop`
 
 Accepts `params:{"requestId":"3"}`. All prototype gestures are non-cancellable,

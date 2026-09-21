@@ -29,12 +29,30 @@ export type OledArt =
 
 export type OledSim =
   | { kind: "eyes"; eyes: OledEyes }
-  | { kind: "art"; art: OledArt };
+  | { kind: "art"; art: OledArt }
+  | { kind: "marquee"; text: string };
 
 export type LedEffect = "solid" | "blink" | "breathe" | "rainbow";
 export type LedSim = { effect: LedEffect; color: string };
 
-export type SpeakerSound = "drink_water" | "chirp" | "alert" | "chime" | "ping";
+export type SpeakerSound =
+  | "drink_water"
+  | "chirp"
+  | "alert"
+  | "chime"
+  | "ping"
+  | "dog_bark"
+  | "bubble"
+  | "whistle"
+  | "sigh"
+  | "boing"
+  | "question"
+  | "downstep"
+  | "sparkle"
+  | "trill"
+  | "bark"
+  | "knock"
+  | "sonar";
 export type SpeakerSim = { sound: SpeakerSound };
 
 export type GestureSim = { oled?: OledSim; led?: LedSim; speaker?: SpeakerSim };
@@ -125,6 +143,18 @@ export const CATALOG: GestureDef[] = [
   speaker("speaker.alert", "Short alert tone", "alert", 900),
   speaker("speaker.chime", "Completion chime", "chime", 1100),
   speaker("speaker.ping", "Short ping", "ping", 500),
+  speaker("speaker.dog_bark", "Dog bark (recording, twice)", "dog_bark", 1020),
+  speaker("speaker.bubble", "Bubble pop (synthesized)", "bubble", 590),
+  speaker("speaker.whistle", "Rising whistle (synthesized)", "whistle", 780),
+  speaker("speaker.sigh", "Sleepy sigh (synthesized)", "sigh", 860),
+  speaker("speaker.boing", "Boing (synthesized)", "boing", 740),
+  speaker("speaker.question", "Question cue (synthesized)", "question", 820),
+  speaker("speaker.downstep", "Gentle down-step (synthesized)", "downstep", 860),
+  speaker("speaker.sparkle", "Sparkle (synthesized)", "sparkle", 830),
+  speaker("speaker.trill", "Trill (synthesized)", "trill", 760),
+  speaker("speaker.bark", "Dog bark (CC0 recording, once)", "bark", 1000),
+  speaker("speaker.knock", "Knock-knock (synthesized)", "knock", 730),
+  speaker("speaker.sonar", "Sonar echo (synthesized)", "sonar", 850),
 ];
 
 export const CATALOG_BY_ID: Record<string, GestureDef> = Object.fromEntries(
