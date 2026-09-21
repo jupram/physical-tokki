@@ -1,10 +1,12 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CircleStop, Play } from "lucide-react";
-import { CATALOG_BY_ID, MEDIUM_LABEL, gesturesByMedium } from "./catalog";
+import { CATALOG_BY_ID, MEDIUM_LABEL, gesturesByMedium, scrollingTextGesture } from "./catalog";
 import type { GestureDef, LedSim, Medium, OledSim, SpeakerSim } from "./catalog";
 import { MediumPreview } from "./GesturePreview";
 import type { PreviewLane } from "./GesturePreview";
 import { cancelSpeech, playSound } from "./audio";
+import { ScrollingTextInput } from "./ScrollingTextInput";
+import { DEFAULT_SCROLLING_TEXT, SCROLLING_TEXT_ID, scrollingTextError } from "./scrollingText";
 
 type LaneSim = OledSim | LedSim | SpeakerSim;
 
@@ -12,7 +14,7 @@ type LaneSim = OledSim | LedSim | SpeakerSim;
 // preview of that medium on the right.
 type Props = {
   medium: Medium;
-  onPreviewGesture?: (gesture: GestureDef) => void;
+  onPreviewGesture?: (gesture: GestureDef, text?: string) => void;
 };
 
 export function MediumStudio({ medium, onPreviewGesture }: Props) {
@@ -25,8 +27,14 @@ export function MediumStudio({ medium, onPreviewGesture }: Props) {
     active: false,
   });
   const [playing, setPlaying] = useState(false);
+  const [text, setText] = useState(DEFAULT_SCROLLING_TEXT);
+  const [previewCycle, setPreviewCycle] = useState(0);
   const stopRef = useRef<(() => void) | null>(null);
-  const selected = CATALOG_BY_ID[selectedId];
+  const scrolling = selectedId === SCROLLING_TEXT_ID;
+  const textError = scrolling ? scrollingTextError(text) : null;
+  const selected = scrolling && !textError ? scrollingTextGesture(text) : CATALOG_BY_ID[selectedId];
+
+  useEffect(() => () => stopRef.current?.(), []);
 
   function stop() {
     stopRef.current?.();
@@ -47,15 +55,16 @@ export function MediumStudio({ medium, onPreviewGesture }: Props) {
   }
 
   function play() {
-    if (!selected) return;
+    if (!selected || textError) return;
     stopRef.current?.();
     const sim = selected.sim[medium] as LaneSim | undefined;
     setPlaying(true);
+    setPreviewCycle((cycle) => cycle + 1);
     setLane({ sim, label: selected.name, active: true });
     if (medium === "speaker" && selected.sim.speaker) {
       playSound(selected.sim.speaker.sound);
     }
-    onPreviewGesture?.(selected);
+    onPreviewGesture?.(selected, scrolling ? text : undefined);
     const timer = window.setTimeout(() => {
       setPlaying(false);
       setLane({ sim, label: selected.name, active: false });
@@ -86,6 +95,12 @@ export function MediumStudio({ medium, onPreviewGesture }: Props) {
             </option>
           ))}
         </select>
+        {scrolling && (
+          <ScrollingTextInput id="preview-scrolling-text" value={text} onChange={(value) => {
+            stop();
+            setText(value);
+          }} />
+        )}
         <div className="medium-meta">
           <code>{selected?.id}</code>
           <span>{selected ? `${(selected.ms / 1000).toFixed(1)}s` : ""}</span>
@@ -93,6 +108,7 @@ export function MediumStudio({ medium, onPreviewGesture }: Props) {
         <button
           className={playing ? "primary-button danger" : "primary-button"}
           onClick={playing ? stop : play}
+          disabled={!playing && !!textError}
           type="button"
         >
           {playing ? <CircleStop size={15} /> : <Play size={15} fill="currentColor" />}
@@ -100,7 +116,7 @@ export function MediumStudio({ medium, onPreviewGesture }: Props) {
         </button>
       </div>
       <div className="medium-right">
-        <MediumPreview medium={medium} lane={lane} />
+        <MediumPreview key={previewCycle} medium={medium} lane={lane} />
       </div>
     </div>
   );

@@ -35,9 +35,17 @@ fn serial_refresh(transport: tauri::State<'_, transport::Transport>) -> Result<(
 #[tauri::command]
 fn serial_run(
     action_id: String,
+    text: Option<String>,
     transport: tauri::State<'_, transport::Transport>,
 ) -> Result<(), String> {
-    transport.submit(transport::Command::Run(action_id))
+    let command = match text {
+        Some(text) if action_id == protocol::SCROLLING_TEXT_ACTION => {
+            transport::Command::ScrollingText(text)
+        }
+        Some(_) => return Err("Only Scrolling text accepts custom text".into()),
+        None => transport::Command::Run(action_id),
+    };
+    transport.submit(command)
 }
 
 #[tauri::command]

@@ -5,7 +5,8 @@ pub const PREFIX: &[u8] = b"TOKKI/1 ";
 pub const MAX_FRAME: usize = 1024;
 pub const MAX_ACTIONS: usize = 4096;
 pub const MAX_ACTION_ID: usize = 96;
-pub const MAX_MARQUEE_TEXT: usize = 40;
+pub const MAX_MARQUEE_TEXT: usize = 50;
+pub const SCROLLING_TEXT_ACTION: &str = "oled.scrolling_text";
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -329,8 +330,8 @@ mod tests {
             assert!(request(invalid, "hello", json!({})).is_err());
         }
         assert!(valid_marquee_text("Teams: Build 42!"));
-        assert!(valid_marquee_text(&"x".repeat(40)));
-        for invalid in ["", "line\nbreak", "café", &"x".repeat(41)] {
+        assert!(valid_marquee_text(&"x".repeat(50)));
+        for invalid in ["", "line\nbreak", "café", &"x".repeat(51)] {
             assert!(!valid_marquee_text(invalid));
         }
     }
@@ -418,7 +419,7 @@ mod tests {
 
         let mut catalog = Vec::new();
         let mut total = None;
-        for cursor in (0..31).step_by(4) {
+        for cursor in (0..48).step_by(4) {
             let Message::Response {
                 id,
                 result: Ok(value),
@@ -428,9 +429,9 @@ mod tests {
             };
             assert_eq!(id, Some(format!("fixture-page-{cursor}")));
             let next = append_page(&mut catalog, &mut total, value).unwrap();
-            assert_eq!(next, (cursor + 4 < 31).then_some(cursor + 4));
+            assert_eq!(next, (cursor + 4 < 48).then_some(cursor + 4));
         }
-        assert_eq!(total, Some(31));
+        assert_eq!(total, Some(48));
         let expected_ids = [
             "led.blink",
             "neopixel.rainbow",
@@ -463,6 +464,23 @@ mod tests {
             "speaker.chime",
             "speaker.ping",
             "speaker.dog_bark",
+            "speaker.bubble",
+            "speaker.whistle",
+            "speaker.tone_low",
+            "speaker.tone_mid",
+            "speaker.question",
+            "speaker.tone_high",
+            "speaker.sparkle",
+            "speaker.trill",
+            "speaker.tone_rise",
+            "speaker.knock",
+            "speaker.sonar",
+            "oled.lovey_dovey",
+            "oled.shy",
+            "oled.night_sky",
+            "oled.sunrise",
+            "oled.sleeping",
+            "oled.scrolling_text",
         ];
         assert_eq!(
             catalog

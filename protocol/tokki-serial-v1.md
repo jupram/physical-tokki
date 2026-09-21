@@ -62,25 +62,50 @@ The result has this shape:
   "actions": [
     {"id": "led.blink", "name": "Blink status LED", "device": "led", "cancellable": false}
   ],
-  "total": 31,
+  "total": 48,
   "nextCursor": 4
 }
 ```
 
 The example above omits the other three descriptors for readability. `cursor`
 defaults to zero and must be an integer from zero through `total`. Clients must
-request `nextCursor` until it is `null`; do not assume the catalog has 31 entries
+request `nextCursor` until it is `null`; do not assume the catalog has 48 entries
 or that every page is full. Requesting `cursor == total` returns an empty page
 and `nextCursor:null`. Descriptors have no duration field in v1.
 
 ### `action.run`
 
-Queues one action. Prototype actions take no parameters; `params` must contain
-only `actionId` (a stable identifier of at most 96 characters).
+Queues one action. `params` must contain `actionId` (a stable identifier of at
+most 96 characters). All actions except `oled.scrolling_text` accept no other
+parameters.
 
 ```text
 TOKKI/1 {"id":"3","method":"action.run","params":{"actionId":"neopixel.rainbow"}}
 ```
+
+The catalog contains **48 actions, including 24 OLED actions**. The appended
+`oled.scrolling_text` descriptor has name `Scrolling text`, device `oled`, and
+`cancellable:false`; existing action IDs and registry positions are unchanged.
+It accepts an optional `text` string of **1-50 printable ASCII characters**
+(`0x20` through `0x7E`). Omitting `text` uses exactly `Hello from Tokki!`.
+Empty strings, non-string values, controls, non-ASCII characters, text longer
+than 50 characters, duplicate/extra properties, or `text` on any other action
+are rejected as `invalid_params`; malformed JSON and NUL escapes remain
+`invalid_request`. Firmware never truncates supplied text.
+
+```text
+TOKKI/1 {"id":"title","method":"action.run","params":{"actionId":"oled.scrolling_text","text":"Teams: Build 42!"}}
+TOKKI/1 {"id":"greeting","method":"action.run","params":{"actionId":"oled.scrolling_text"}}
+```
+
+Accepted jobs own a copy of their text until execution. Scrolling uses the
+same renderer and runner as legacy `oled.marquee`: one right-to-left pass,
+two pixels per 45 ms frame, with no extra eye restoration frame. Its nominal
+duration is `(63 + 6 * character_count) * 45 ms` (7.425 seconds by default;
+16.335 seconds for 50 characters), excluding hardware/scheduler overhead.
+The default greeting's last frame is blank; normal OLED idle resumes after
+the queue drains. Lifecycle events use `actionId:"oled.scrolling_text"` for
+both custom and default text, and the first driver failure stops playback.
 
 The response `{"accepted":true}` in `result` confirms acceptance, not playback
 completion. There is one worker per physical device (OLED, speaker, status LED,
@@ -106,8 +131,9 @@ delivery may have succeeded and retrying could play the gesture twice.
 
 ### `oled.marquee`
 
-Queues one parameterized OLED marquee without adding dynamic content to the
-fixed gesture catalog. `params` must contain only `text`, with 1 to 40 printable
+Legacy compatibility method; new clients should use `action.run` with
+`actionId:"oled.scrolling_text"`. It queues one parameterized OLED marquee
+without adding a separate catalog entry. `params` must contain only `text`, with 1 to 50 printable
 ASCII characters (`0x20` through `0x7E`).
 
 ```text
@@ -122,9 +148,10 @@ queue. Clients must not retry after an ambiguous timeout.
 
 ### `neopixel.notification`
 
+Legacy compatibility method, no longer used by the fixed notification relay.
 Queues a parameterized NeoPixel color for the duration of the corresponding
 OLED marquee without adding dynamic notification entries to the fixed action
-catalog. `params` must contain only the same validated `text` used for
+catalog. `params` must contain only the same validated 1-50-character `text` used for
 `oled.marquee` and a `color` of `blue`, `purple`, or `yellow`.
 
 ```text
@@ -137,6 +164,25 @@ on, waits for the exact number of 45 ms frames used by one OLED marquee scroll,
 then turns the NeoPixel off. Send this request with the matching `oled.marquee`
 and speaker `action.run`; separate device workers execute them concurrently.
 It uses the NeoPixel device's FIFO ordering and shared waiting queue.
+
+### Fixed desktop notification mapping
+
+The desktop relay uses existing catalog gestures plus the new scrolling-text
+action, not the two legacy methods:
+
+| Notification | OLED eyes first | Speaker | NeoPixel | OLED title second |
+| --- | --- | --- | --- | --- |
+| Teams | `oled.curious` | `speaker.trill` | `neopixel.rainbow` | `oled.scrolling_text` |
+| Outlook mail | `oled.happy` | `speaker.chime` | `neopixel.pulse_blue` | `oled.scrolling_text` |
+| Outlook meeting/reminder | `oled.surprised` | `speaker.whistle` | `neopixel.blink_yellow` | `oled.scrolling_text` |
+
+Send the eye action before the title action; the OLED worker's FIFO ensures
+eyes complete before title scrolling starts. Speaker and NeoPixel actions can
+overlap the OLED sequence on their own workers and retain their existing
+finite durations and final states; lights are not extended to the title's
+duration. The title is passed in `action.run.params.text`. No notification
+bundle, new sound, or new light action is registered. Autonomous idle behavior
+is unchanged.
 
 ### `action.stop`
 
@@ -211,7 +257,10 @@ restored the managed cJSON dependency. It compiles the real protocol, catalog,
 and idle renderer with mocked hardware, checking fragmented/combined frames,
 CRLF, the exact 1024-byte boundary, malformed input recovery, all catalog pages,
 per-device FIFO capacity/order, cross-device dispatch, acceptance/lifecycle
-ordering, errors, and idle frames.
+ordering, errors, and idle frames. Scrolling tests cover the default catalog
+action, all 50 characters (51 rejected), printable-ASCII validation, owned
+queued text, eyes-before-title FIFO execution, frame bounds and original
+45 ms/two-pixel timing, driver errors, idle resumption, and both legacy methods.
 It does not emulate UART electrical behavior or physical OLED timing.
 
 For cross-language conformance tests, add `-WireFixturePath <output-file>` to

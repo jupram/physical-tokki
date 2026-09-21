@@ -5,6 +5,9 @@
 
 #include "esp_err.h"
 
+#define TOKKI_OLED_SCROLLING_TEXT_ACTION_ID "oled.scrolling_text"
+#define TOKKI_OLED_SCROLLING_TEXT_DEFAULT "Hello from Tokki!"
+
 typedef enum {
     TOKKI_DEVICE_OLED,
     TOKKI_DEVICE_SPEAKER,

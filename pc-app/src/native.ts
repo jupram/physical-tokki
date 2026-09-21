@@ -32,8 +32,9 @@ export interface NotificationSnapshot {
 export interface QueuedNotification {
   source: string;
   text: string;
+  oled: string;
   sound: string;
-  color: "blue" | "purple" | "yellow";
+  light: string;
 }
 export const emptySnapshot: Snapshot = {
   revision: 0, status: "disconnected", port: null, hello: null, actions: [], activity: [], lastError: null,
@@ -69,7 +70,10 @@ export function createClient(native: boolean, call: typeof invoke = invoke) {
     connect: (port: string) => nativeCall<void>("serial_connect", { port }),
     disconnect: () => nativeCall<void>("serial_disconnect"),
     refresh: () => nativeCall<void>("serial_refresh"),
-    run: (actionId: string) => nativeCall<void>("serial_run", { actionId }),
+    run: (actionId: string, text?: string) => nativeCall<void>("serial_run", {
+      actionId,
+      ...(text === undefined ? {} : { text }),
+    }),
     marquee: (text: string) => nativeCall<void>("serial_marquee", { text }),
     notificationSnapshot: () => nativeCall<NotificationSnapshot>("notification_snapshot"),
     requestNotificationAccess: () => nativeCall<NotificationSnapshot>("notification_request_access"),

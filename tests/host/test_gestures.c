@@ -18,6 +18,7 @@ static unsigned elapsed_ms;
 static uint8_t colors[129][3];
 static unsigned oled_calls;
 static unsigned fail_oled_call;
+static const char *scrolling_text;
 static uint8_t last_frame[TOKKI_OLED_FRAME_SIZE];
 static tokki_speaker_sound_t last_sound;
 static esp_err_t speaker_result;
@@ -62,7 +63,16 @@ esp_err_t tokki_oled_draw_frame(const uint8_t *framebuffer, size_t size)
     for (size_t index = 0; index < size; ++index) {
         lit += framebuffer[index] != 0;
     }
-    assert(lit > 0 && lit < size);
+    assert(lit < size);
+    if (scrolling_text != NULL) {
+        uint8_t expected[TOKKI_OLED_FRAME_SIZE];
+        assert(tokki_oled_render_marquee(expected, sizeof(expected), scrolling_text,
+               TOKKI_OLED_WIDTH - (int) oled_calls * 2) == ESP_OK);
+        assert(memcmp(framebuffer, expected, sizeof(expected)) == 0);
+        assert(elapsed_ms == oled_calls * 45);
+    } else {
+        assert(lit > 0);
+    }
     if (record_preview) {
         fprintf(preview_output, "%s\"", oled_calls == 0 ? "" : ",");
         for (size_t index = 0; index < size; ++index) {
@@ -104,6 +114,7 @@ static void reset_output(void)
     elapsed_ms = 0;
     oled_calls = 0;
     fail_oled_call = 0;
+    scrolling_text = NULL;
     memset(colors, 0, sizeof(colors));
 }
 
@@ -118,8 +129,82 @@ static void test_marquee_renderer(void)
     assert(tokki_oled_render_marquee(guarded + 1, TOKKI_OLED_FRAME_SIZE,
                                      "Teams: Build 42!", -120) == ESP_OK);
     assert(tokki_oled_marquee_width("") == 0);
-    assert(tokki_oled_marquee_width("12345678901234567890123456789012345678901") == 0);
+    char full[51];
+    memset(full, 'W', 50);
+    full[50] = '\0';
+    assert(tokki_oled_marquee_width(full) == 598);
+    for (int left = 128; left >= -598; left -= 2) {
+        assert(tokki_oled_render_marquee(guarded + 1, TOKKI_OLED_FRAME_SIZE, full, left) == ESP_OK);
+        assert(guarded[0] == 0xA5 && guarded[sizeof(guarded) - 1] == 0xA5);
+    }
+    assert(tokki_oled_marquee_width("123456789012345678901234567890123456789012345678901") == 0);
+    assert(tokki_oled_marquee_width(NULL) == 0);
+    assert(tokki_oled_marquee_width("bad\ntext") == 0);
+    assert(tokki_oled_marquee_width("\x7F") == 0);
+    assert(tokki_oled_marquee_width("\x80") == 0);
+    for (char character = 0x20; character < 0x7F; ++character) {
+        char text[] = {character, '\0'};
+        assert(tokki_oled_marquee_width(text) == 10);
+        assert(tokki_oled_render_marquee(guarded + 1, TOKKI_OLED_FRAME_SIZE, text, 0) == ESP_OK);
+        assert(guarded[0] == 0xA5 && guarded[sizeof(guarded) - 1] == 0xA5);
+    }
     assert(tokki_oled_render_marquee(NULL, TOKKI_OLED_FRAME_SIZE, "Hi", 0) == ESP_ERR_INVALID_ARG);
+    assert(tokki_oled_render_marquee(guarded + 1, TOKKI_OLED_FRAME_SIZE - 1, "Hi", 0) == ESP_ERR_INVALID_ARG);
+}
+
+static void test_scrolling_text(void)
+{
+    const char *id = "oled.scrolling_text";
+    const char *default_text = "Hello from Tokki!";
+    const tokki_action_descriptor_t *action = tokki_action_find(id);
+    assert(action != NULL && action->device == TOKKI_DEVICE_OLED && !action->cancellable);
+    assert(strcmp(action->display_name, "Scrolling text") == 0);
+    reset_output();
+    scrolling_text = default_text;
+    if (preview_output != NULL) {
+        begin_preview(id, 7425, "oled");
+        fputs(",\"frames\":[", preview_output);
+        record_preview = true;
+    }
+    assert(tokki_action_run(id) == ESP_OK);
+    record_preview = false;
+    if (preview_output != NULL) {
+        fputs("]}", preview_output);
+    }
+    assert(oled_calls == 165 && elapsed_ms == 7425);
+    uint8_t blank[TOKKI_OLED_FRAME_SIZE] = {0};
+    assert(memcmp(last_frame, blank, sizeof(blank)) == 0);
+    for (unsigned failure = 1; failure <= 165; ++failure) {
+        reset_output();
+        scrolling_text = default_text;
+        fail_oled_call = failure;
+        assert(tokki_action_run(id) == ESP_FAIL);
+        assert(oled_calls == failure && elapsed_ms == (failure - 1) * 45);
+    }
+
+    const char *texts[] = {"A", " ", "Teams: Build 42!",
+                          "12345678901234567890123456789012345678901234567890"};
+    const unsigned frames[] = {69, 69, 159, 363};
+    for (unsigned index = 0; index < sizeof(texts) / sizeof(texts[0]); ++index) {
+        reset_output();
+        scrolling_text = texts[index];
+        assert(tokki_oled_scroll_text(texts[index]) == ESP_OK);
+        assert(oled_calls == frames[index] && elapsed_ms == frames[index] * 45);
+        for (unsigned failure = 1; failure <= frames[index]; failure += frames[index] / 2) {
+            reset_output();
+            scrolling_text = texts[index];
+            fail_oled_call = failure;
+            assert(tokki_oled_scroll_text(texts[index]) == ESP_FAIL);
+            assert(oled_calls == failure && elapsed_ms == (failure - 1) * 45);
+        }
+    }
+    const char *invalid[] = {NULL, "", "\n", "\x7F", "\x80",
+                            "123456789012345678901234567890123456789012345678901"};
+    for (unsigned index = 0; index < sizeof(invalid) / sizeof(invalid[0]); ++index) {
+        reset_output();
+        assert(tokki_oled_scroll_text(invalid[index]) == ESP_ERR_INVALID_ARG);
+        assert(oled_calls == 0 && elapsed_ms == 0);
+    }
 }
 
 static void test_blink(const char *id, uint8_t red, uint8_t green)
@@ -957,7 +1042,7 @@ int main(int argc, char **argv)
         assert(fopen_s(&preview_output, argv[2], "w") == 0);
         fputs("window.TOKKI_PREVIEW = {\n", preview_output);
     }
-    assert(tokki_action_count() == 47);
+    assert(tokki_action_count() == 48);
     assert(PET_EYES_HAPPY == 0 && PET_EYES_SLEEPY == 9);
     assert(PET_EYES_LOVEY_DOVEY == 10 && PET_EYES_SHY == 11);
     assert(PET_EYES_SLEEPING == 12);
@@ -967,16 +1052,19 @@ int main(int argc, char **argv)
     assert(tokki_action_at(44) == tokki_action_find("oled.night_sky"));
     assert(tokki_action_at(45) == tokki_action_find("oled.sunrise"));
     assert(tokki_action_at(46) == tokki_action_find("oled.sleeping"));
+    assert(tokki_action_at(47) == tokki_action_find("oled.scrolling_text"));
     assert(TOKKI_OLED_ART_EXCLAMATION == 6 && TOKKI_OLED_ART_NIGHT_SKY == 7 && TOKKI_OLED_ART_SUNRISE == 8);
     assert(tokki_action_at(tokki_action_count()) == NULL);
     assert(tokki_action_find(NULL) == NULL);
     assert(tokki_action_run("missing") == ESP_ERR_NOT_FOUND);
     assert(tokki_action_run(NULL) == ESP_ERR_NOT_FOUND);
+    unsigned device_counts[TOKKI_DEVICE_COUNT] = {0};
     for (size_t index = 0; index < tokki_action_count(); ++index) {
         const tokki_action_descriptor_t *action = tokki_action_at(index);
         assert(action != NULL && action->run != NULL);
         assert(action->display_name != NULL && !action->cancellable);
         assert(tokki_action_find(action->id) == action);
+        ++device_counts[action->device];
         const char *device = tokki_device_name(action->device);
         assert(strncmp(action->id, device, strlen(device)) == 0);
         assert(action->id[strlen(device)] == '.');
@@ -984,6 +1072,8 @@ int main(int argc, char **argv)
             assert(strcmp(action->id, tokki_action_at(other)->id) != 0);
         }
     }
+    assert(device_counts[TOKKI_DEVICE_OLED] == 24 && device_counts[TOKKI_DEVICE_SPEAKER] == 17);
+    assert(device_counts[TOKKI_DEVICE_NEOPIXEL] == 6 && device_counts[TOKKI_DEVICE_LED] == 1);
     reset_output();
     assert(tokki_action_run("led.blink") == ESP_OK);
     assert(elapsed_ms == 1800);
@@ -1016,6 +1106,7 @@ int main(int argc, char **argv)
     test_oled("oled.night_sky", 48, 2880);
     test_oled("oled.sunrise", 64, 3840);
     test_oled("oled.sleeping", 48, 2880);
+    test_scrolling_text();
     test_renderers();
     test_cartoon_eyes();
     test_affectionate_eyes();

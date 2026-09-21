@@ -140,11 +140,37 @@ static void list_actions(tokki_protocol_t *protocol, const char *id, const cJSON
     emit_json(protocol, object, id);
 }
 
+static bool valid_marquee_text(const cJSON *value)
+{
+    if (!cJSON_IsString(value)) {
+        return false;
+    }
+    size_t length = strlen(value->valuestring);
+    if (length == 0 || length > TOKKI_MARQUEE_TEXT_MAX) {
+        return false;
+    }
+    for (size_t index = 0; index < length; ++index) {
+        unsigned char character = (unsigned char) value->valuestring[index];
+        if (character < 0x20 || character > 0x7E) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void run_action(tokki_protocol_t *protocol, const char *id, const cJSON *params)
 {
     const cJSON *action_id = cJSON_GetObjectItemCaseSensitive(params, "actionId");
-    if (!valid_identifier(action_id, TOKKI_ACTION_ID_MAX) || cJSON_GetArraySize(params) != 1) {
-        error_response(protocol, id, "invalid_params", "Provide only a stable actionId");
+    if (!valid_identifier(action_id, TOKKI_ACTION_ID_MAX)) {
+        error_response(protocol, id, "invalid_params", "Provide a stable actionId");
+        return;
+    }
+    const cJSON *text = cJSON_GetObjectItemCaseSensitive(params, "text");
+    bool scrolling_text = strcmp(action_id->valuestring, TOKKI_OLED_SCROLLING_TEXT_ACTION_ID) == 0;
+    if (cJSON_GetArraySize(params) != (text != NULL ? 2 : 1) ||
+        (text != NULL && (!scrolling_text || !valid_marquee_text(text)))) {
+        error_response(protocol, id, "invalid_params",
+                       "Only oled.scrolling_text accepts optional text: 1 to 50 printable ASCII characters");
         return;
     }
     if (tokki_action_find(action_id->valuestring) == NULL) {
@@ -169,27 +195,11 @@ static void run_action(tokki_protocol_t *protocol, const char *id, const cJSON *
     tokki_job_t *job = &protocol->queue[(protocol->head + protocol->count) % TOKKI_QUEUE_CAPACITY];
     memcpy(job->request_id, id, strlen(id) + 1);
     memcpy(job->action_id, action_id->valuestring, strlen(action_id->valuestring) + 1);
-    job->text[0] = '\0';
+    const char *queued_text = text != NULL ? text->valuestring :
+                              scrolling_text ? TOKKI_OLED_SCROLLING_TEXT_DEFAULT : "";
+    memcpy(job->text, queued_text, strlen(queued_text) + 1);
     ++protocol->count;
     emit_json(protocol, object, id);
-}
-
-static bool valid_marquee_text(const cJSON *value)
-{
-    if (!cJSON_IsString(value)) {
-        return false;
-    }
-    size_t length = strlen(value->valuestring);
-    if (length == 0 || length > TOKKI_MARQUEE_TEXT_MAX) {
-        return false;
-    }
-    for (size_t index = 0; index < length; ++index) {
-        unsigned char character = (unsigned char) value->valuestring[index];
-        if (character < 0x20 || character > 0x7E) {
-            return false;
-        }
-    }
-    return true;
 }
 
 static void run_marquee(tokki_protocol_t *protocol, const char *id, const cJSON *params)
@@ -197,7 +207,7 @@ static void run_marquee(tokki_protocol_t *protocol, const char *id, const cJSON 
     const cJSON *text = cJSON_GetObjectItemCaseSensitive(params, "text");
     if (!valid_marquee_text(text) || cJSON_GetArraySize(params) != 1) {
         error_response(protocol, id, "invalid_params",
-                       "text must be 1 to 40 printable ASCII characters");
+                       "text must be 1 to 50 printable ASCII characters");
         return;
     }
     if (!protocol->ready) {
@@ -248,7 +258,7 @@ static void run_notification_light(tokki_protocol_t *protocol, const char *id,
         cJSON_GetObjectItemCaseSensitive(params, "color"));
     if (!valid_marquee_text(text) || action_id == NULL || cJSON_GetArraySize(params) != 2) {
         error_response(protocol, id, "invalid_params",
-                       "text must be printable ASCII and color must be blue, purple or yellow");
+                       "text must be 1 to 50 printable ASCII characters and color must be blue, purple or yellow");
         return;
     }
     if (!protocol->ready) {

@@ -2,7 +2,8 @@
 
 Native Tauri 2 + React/TypeScript prototype for **discovering and manually sending
 gestures to the pet**. The Rust backend owns a real USB UART connection; there is
-no mock transport, hardcoded gesture catalog, or simulated completion.
+no mock transport or simulated completion. Hardware sends use the discovered
+catalog; a matching local catalog supports offline previews.
 
 ## Prerequisites and run
 
@@ -50,7 +51,7 @@ the same gesture to the physical pet; this redesign does not change serial
 commands, queuing, connection readiness, or completion reporting. Event triggers
 remain manual; the UI does not claim that a scheduler is running.
 
-The OLED picker and bundle palette offer **23 OLED gestures**, including
+The OLED picker and bundle palette offer **24 OLED gestures**, including
 **Sleeping eyes (Zzz)** (`oled.sleeping`, 48 frames × 90 ms = 4.32 seconds),
 **Night sky** (`oled.night_sky`, 4.32 seconds), and **Sunrise**
 (`oled.sunrise`, 5.76 seconds). The sleeping preview gently closes into
@@ -71,6 +72,15 @@ sleeping eyes, with no intervening pause or reopen. Each portion lasts
 The **600–1200 ms** rest holds occur between choices, not within the pair.
 Manual previews/gestures are unchanged. Sunrise remains manual.
 
+**Scrolling text** (`oled.scrolling_text`) is a regular OLED catalog gesture.
+Select it in the OLED preview picker or find it in the discovered Send list to
+enter custom text. Both surfaces require **1–50 printable ASCII characters**
+and show an explicit error for invalid input; they never silently truncate it.
+The default is **Hello from Tokki!**; saved bundles use that default.
+Its duration is `ceil((128 + (length * 12 - 2)) / 2) * 45` milliseconds.
+The native `serial_run` bridge accepts optional `text`; when omitted, firmware
+uses the default. Custom text travels as `action.run {actionId, text}`.
+
 ## Manual hardware verification
 
 1. Use a pet already running the `TOKKI/1` firmware (hello currently reports
@@ -81,7 +91,7 @@ Manual previews/gestures are unchanged. Sunrise remains manual.
    **Connect**. Enumeration does not open ports. The app never scans by opening
    every port and never auto-connects after a failure.
 4. Verify real firmware/board metadata and the discovered action count. The
-   current firmware has 47 action descriptors; the UI does not assume that number.
+   current firmware has 48 action descriptors; the UI does not assume that number.
    Connect sends hello, waits for `ready: true`, then fetches **every catalog
    page**. **Gestures → Refresh catalog** repeats discovery from cursor zero.
    `ready` covers board/LED/RGB startup only, not verified OLED or speaker health.
@@ -158,15 +168,30 @@ device might already have executed it. The app does **not retry action.run**.
 - The Windows notification relay reads toast notifications in the native Rust
   process, so it continues while the app window is minimized. It ignores the
   notification backlog present when enabled, deduplicates current notifications,
-  and holds at most five new notifications in FIFO order. Teams uses
-  `speaker.trill` with purple; Outlook mail uses `speaker.chime` with blue;
-  Outlook meeting/reminder text takes precedence and uses `speaker.whistle`
-  with yellow. Each match sends a single 40-character printable-ASCII OLED
-  marquee, its sound, and a NeoPixel light lasting for the marquee duration.
+  and holds at most five new notifications in FIFO order. The fixed mappings are:
+  - Teams: `oled.curious` + `speaker.trill` + `neopixel.rainbow`.
+  - Outlook mail: `oled.happy` + `speaker.chime` + `neopixel.pulse_blue`.
+  - Outlook meeting/reminder (takes precedence): `oled.surprised` +
+    `speaker.whistle` + `neopixel.blink_yellow`.
+  Eyes play first; sound and the existing light animation start alongside them.
+  Then `oled.scrolling_text` scrolls the normalized notification **title**,
+  up to **50 printable ASCII characters**, without message body text.
+  For Outlook mail, this is `Email :  <subject>`: the second toast text element,
+  not the sender. The label includes two spaces after the colon and leaves up
+  to **41 characters** for the normalized subject. Teams and meeting/reminder
+  notifications have no label and retain their first-line
+  title. Missing titles/subjects are reported and skipped, never replaced with
+  a message preview.
+  Light and sound retain their normal gesture durations, not the title duration.
+  Flash matching firmware and refresh/reconnect to discover `oled.scrolling_text`;
+  the relay requires the new gesture.
   Other sources are ignored. The relay does not reconnect the serial port
   automatically. The Events screen shows each waiting FIFO item with its source,
-  normalized marquee text, sound, and color. Routing cards and queued items can
-  be simulated locally without sending hardware commands or consuming the FIFO.
+  normalized title, eye gesture, sound, and light gesture. Native queued items
+  have `{source, text, oled, sound, light}` (qualified gesture IDs, no color field).
+  Routing cards and queued items simulate the actual catalog gestures locally,
+  with eyes then title in the OLED lane, without sending hardware commands or
+  consuming the FIFO.
 - Freeform event rules remain local preview data; they are not a scheduler.
 
 The shared wire contract is in `..\protocol\tokki-serial-v1.md`.
@@ -211,10 +236,14 @@ envelopes, request bounds, dynamic pagination, correlation, real acceptance and
 lifecycle transitions, queue rejection, driver errors, explicit timeouts,
 disconnect cleanup, stale events, bounded handshake retries, and a scripted
 duplex test link fetching all pages. They also cover notification source routing,
-meeting precedence, and bounded ASCII marquee normalization. The scripted link
+meeting precedence, and bounded ASCII title normalization. The scripted link
 exists **only in tests**.
 Frontend tests cover the native-only guard, command routing, dynamic IDs, error
 propagation without retries, queue counts, and unchanged backend snapshots.
+Scrolling-text tests cover ASCII/length validation without truncation, default
+and custom action payloads, exact timing, and the 48-action/24-OLED catalog.
+Notification preview tests cover approved mappings, eyes-first sequencing,
+concurrent catalog sound/light, and preservation of queued titles.
 Focused OLED tests cover the local catalog, sleeping-eye poses and Z geometry,
 accessible preview output, and shared sleep/sky timing, stop/replay cleanup,
 and reduced-motion changes.

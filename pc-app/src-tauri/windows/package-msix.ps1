@@ -1,6 +1,6 @@
 param(
     [string] $Publisher = 'CN=Physical Tokki Development',
-    [string] $Version = '0.1.0.2',
+    [string] $Version = '0.1.0.5',
     [string] $CertificateThumbprint
 )
 
@@ -16,7 +16,7 @@ $architecture = switch ($env:PROCESSOR_ARCHITECTURE) {
 
 Push-Location $pcApp
 try {
-    & npm run tauri build -- --no-bundle
+    & npm.cmd run tauri build -- --no-bundle
     if ($LASTEXITCODE -ne 0) { throw 'Tauri release build failed.' }
 } finally {
     Pop-Location
@@ -41,7 +41,7 @@ $sdkBin = Get-ChildItem "${env:ProgramFiles(x86)}\Windows Kits\10\bin\*" -Direct
     Sort-Object Name -Descending |
     Select-Object -First 1
 if (-not $sdkBin) { throw 'Windows 10/11 SDK tools were not found.' }
-$toolArchitecture = @('arm64', 'x64', 'x86') | Where-Object {
+$toolArchitecture = @($architecture, 'x64', 'x86') | Select-Object -Unique | Where-Object {
     Test-Path (Join-Path $sdkBin.FullName "$_\makeappx.exe")
 } | Select-Object -First 1
 if (-not $toolArchitecture) { throw "MakeAppx was not found under $($sdkBin.FullName)" }

@@ -55,6 +55,7 @@ static const tokki_action_descriptor_t *const ACTIONS[] = {
     &TOKKI_OLED_NIGHT_SKY_ACTION,
     &TOKKI_OLED_SUNRISE_ACTION,
     &TOKKI_OLED_SLEEPING_ACTION,
+    &TOKKI_OLED_SCROLLING_TEXT_ACTION,
 };
 
 size_t tokki_action_count(void)

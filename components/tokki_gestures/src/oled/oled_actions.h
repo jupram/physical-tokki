@@ -25,3 +25,4 @@ extern const tokki_action_descriptor_t TOKKI_OLED_SHY_ACTION;
 extern const tokki_action_descriptor_t TOKKI_OLED_NIGHT_SKY_ACTION;
 extern const tokki_action_descriptor_t TOKKI_OLED_SUNRISE_ACTION;
 extern const tokki_action_descriptor_t TOKKI_OLED_SLEEPING_ACTION;
+extern const tokki_action_descriptor_t TOKKI_OLED_SCROLLING_TEXT_ACTION;

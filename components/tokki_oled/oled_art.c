@@ -330,10 +330,20 @@ static const uint8_t *marquee_glyph(char character)
 
 int tokki_oled_marquee_width(const char *text)
 {
-    if (text == NULL || text[0] == '\0' || strlen(text) > TOKKI_OLED_MARQUEE_MAX) {
+    if (text == NULL) {
         return 0;
     }
-    return (int) strlen(text) * 12 - 2;
+    size_t length = strlen(text);
+    if (length == 0 || length > TOKKI_OLED_MARQUEE_MAX) {
+        return 0;
+    }
+    for (size_t index = 0; index < length; ++index) {
+        unsigned char character = (unsigned char) text[index];
+        if (character < 0x20 || character > 0x7E) {
+            return 0;
+        }
+    }
+    return (int) length * 12 - 2;
 }
 
 esp_err_t tokki_oled_render_marquee(uint8_t *framebuffer, size_t size,

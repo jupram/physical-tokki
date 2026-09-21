@@ -16,9 +16,9 @@ automation agent to follow.
 - The firmware and desktop app must come from the same repository revision when
   protocol features change.
 
-The current locally built `arm64` MSIX only runs on ARM64 Windows. It is signed
-with a private development certificate that is not trusted on other laptops by
-default. For broad distribution, sign each architecture with a certificate from
+Build an MSIX for each target architecture; an `arm64` package cannot be installed
+on an x64 laptop. A local development signing certificate is not trusted on other
+laptops by default. For broad distribution, sign each architecture with a certificate from
 a trusted code-signing provider or distribute through Microsoft Store. For
 controlled development machines, use the local-certificate process below.
 
@@ -64,6 +64,7 @@ if (-not $cert) {
     -Subject $subject `
     -FriendlyName 'Physical Tokki Development' `
     -CertStoreLocation Cert:\CurrentUser\My `
+    -KeyExportPolicy NonExportable `
     -NotAfter (Get-Date).AddYears(3)
 }
 
@@ -81,7 +82,8 @@ and signed `.msix` to installation machines.
 ## Build and sign the architecture-matched MSIX
 
 The packaging script uses the architecture of the current Windows process. Run
-it natively on the target architecture, or use an appropriate CI runner.
+it natively on the target architecture, or use an appropriate CI runner. It uses
+the Windows `npm.cmd` launcher and prefers SDK tools matching that architecture.
 
 ```powershell
 Set-Location .\pc-app
@@ -98,7 +100,7 @@ Verify before distribution:
 
 ```powershell
 Get-AuthenticodeSignature `
-  .\src-tauri\target\release\bundle\msix\Physical-Tokki-0.1.0.2-<architecture>.msix
+  .\src-tauri\target\release\bundle\msix\Physical-Tokki-0.1.0.5-<architecture>.msix
 ```
 
 The expected status is `Valid` on a machine that trusts the signer.
@@ -109,15 +111,16 @@ Copy the `.cer` and architecture-matched `.msix` to the laptop. In an
 **Administrator Command Prompt**, run these with the actual certificate path:
 
 ```cmd
-certutil -addstore Root "C:\path\to\Physical-Tokki-Development.cer"
 certutil -addstore TrustedPeople "C:\path\to\Physical-Tokki-Development.cer"
 ```
 
-Trust only a certificate received through a verified channel. Then install from
-PowerShell:
+Trust only a certificate received through a verified channel, with the machine
+owner's approval. The development signing certificate belongs in the local
+machine's **Trusted People** store, not **Trusted Root Certification Authorities**.
+Then install from a normal PowerShell as the user who will run Tokki:
 
 ```powershell
-Add-AppxPackage -Path 'C:\path\to\Physical-Tokki-0.1.0.2-<architecture>.msix'
+Add-AppxPackage -Path 'C:\path\to\Physical-Tokki-0.1.0.5-<architecture>.msix'
 Get-AppxPackage -Name PhysicalTokki.Desktop |
   Select-Object Name, Version, Architecture, Publisher, Status
 ```
@@ -143,6 +146,9 @@ opening the desktop app because only one process can own the port.
 1. Launch **Physical Tokki** from the Start menu.
 2. Open **Device**, rescan, select the board's USB COM port, and connect.
 3. Confirm firmware discovery finishes and the device status is connected.
+   Matching firmware advertises **48 actions / 24 OLED gestures**, including
+   **Scrolling text** (`oled.scrolling_text`). Reconnect or refresh the catalog
+   after flashing; the relay requires this newly discovered action.
 4. Open **Events** and select **Allow access** if shown. Approve Windows
    notification access. If a toggle is already shown, permission is allowed.
 5. Enable **Windows notification relay**. The status must read `Listening`.
@@ -152,21 +158,41 @@ opening the desktop app because only one process can own the port.
 
 | Source | OLED | Speaker | NeoPixel |
 | --- | --- | --- | --- |
-| Microsoft Teams | One 40-character marquee | Lively trill | Purple |
-| Outlook mail | One 40-character marquee | Chime | Blue |
-| Outlook meeting/reminder | One 40-character marquee | Rising whistle | Yellow |
+| Microsoft Teams | `oled.curious` → `oled.scrolling_text` | `speaker.trill` | `neopixel.rainbow` |
+| Outlook mail | `oled.happy` → `oled.scrolling_text` | `speaker.chime` | `neopixel.pulse_blue` |
+| Outlook meeting/reminder | `oled.surprised` → `oled.scrolling_text` | `speaker.whistle` | `neopixel.blink_yellow` |
 
-The NeoPixel remains lit for the same calculated duration as the OLED marquee,
-then turns off. OLED, speaker, and NeoPixel use separate firmware workers and
-run concurrently. If no board is connected, matching notifications remain in
-the app's bounded five-item FIFO. The Events screen displays each queued source,
-normalized marquee text, sound, and color. Its Play buttons simulate routing or
-queued entries locally; simulation does not send to hardware or consume entries.
+The existing eye gesture plays **first**. Sound and the existing NeoPixel
+animation start alongside the eyes on separate firmware workers. Then Scrolling
+text displays the normalized notification **title**, up to **50 printable
+ASCII characters**, without body text. Sound and light retain
+their normal gesture durations; neither is held for the scroll duration.
+Meeting/reminder detection takes precedence over ordinary Outlook mail.
+
+For Outlook mail, the scroll reads `Email :  <subject>`, with two spaces after
+the colon and up to **41 characters** of normalized subject (50 including the
+label). The subject is taken from the second toast text element; the first
+element is the sender. Teams and meeting/reminder notifications use their first
+text element without a label. A missing or blank
+title/subject is reported and skipped without substituting the message body or
+blocking later notifications.
+
+If no board is connected, matching notifications remain in the app's bounded
+five-item FIFO. The Events screen displays each queued source, normalized title,
+eye gesture, sound, and light gesture. Its Play buttons simulate the same
+eyes-then-title sequence and catalog sound/light locally; simulation does not
+send to hardware or consume entries.
+
+To verify scrolling manually, select **Scrolling text** in the OLED preview
+picker or find it in the discovered Send list. Enter **1–50 printable ASCII
+characters**; invalid input shows an error instead of being silently truncated.
+Without custom text the default is **Hello from Tokki!**. Scroll duration is
+`ceil((128 + (length * 12 - 2)) / 2) * 45` milliseconds.
 
 ## Troubleshooting
 
-- `0x800B0109`: trust the signer in both Local Machine `Root` and
-  `TrustedPeople`, or use a publicly trusted package.
+- `0x800B0109`: trust the verified signer in Local Machine `TrustedPeople`,
+  or use a publicly trusted package.
 - `0x80073CF0`: confirm the package signature, certificate trust, and matching
   architecture.
 - No access prompt: a visible relay toggle and `Listening` status mean access is
@@ -176,5 +202,6 @@ queued entries locally; simulation does not send to hardware or consume entries.
 - Port busy: close ESP-IDF Monitor and all other serial tools.
 - Queued notification does not dispatch: connect the board and complete gesture
   discovery. The relay does not auto-connect.
-- Updated desktop app with old firmware: marquee and sound may work, but the new
-  notification-light request will fail as unsupported. Flash matching firmware.
+- Updated desktop app with old firmware: relay dispatch requires the discovered
+  `oled.scrolling_text` action. Flash matching firmware and reconnect or refresh
+  discovery; the relay does not fall back to a marquee-only notification.

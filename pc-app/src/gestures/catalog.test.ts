@@ -9,10 +9,10 @@ describe("offline gesture catalog", () => {
       return result;
     }, {});
 
-    expect(CATALOG).toHaveLength(47);
-    expect(new Set(CATALOG.map((gesture) => gesture.id))).toHaveLength(47);
+    expect(CATALOG).toHaveLength(48);
+    expect(new Set(CATALOG.map((gesture) => gesture.id))).toHaveLength(48);
     expect(counts).toEqual({
-      oled: 23,
+      oled: 24,
       neopixel: 6,
       led: 1,
       speaker: 17,
@@ -39,7 +39,7 @@ describe("offline gesture catalog", () => {
 });
 
 describe("sleeping eye preview", () => {
-  it("registers the distinct sleeping action in the 23-item OLED catalog", () => {
+  it("registers the distinct sleeping action in the 24-item OLED catalog", () => {
     expect(CATALOG_BY_ID["oled.sleeping"]).toEqual({
       id: "oled.sleeping", name: "Sleeping eyes (Zzz)", device: "oled", medium: "oled",
       ms: SLEEP_FRAMES * SLEEP_FRAME_MS,
@@ -47,7 +47,7 @@ describe("sleeping eye preview", () => {
     });
     expect(SLEEP_FRAMES * SLEEP_FRAME_MS).toBe(4320);
     expect(CATALOG.filter(entry => entry.id === "oled.sleeping")).toHaveLength(1);
-    expect(gesturesByMedium("oled")).toHaveLength(23);
+    expect(gesturesByMedium("oled")).toHaveLength(24);
     expect(gesturesByMedium("oled")).toContain(CATALOG_BY_ID["oled.sleeping"]);
     expect(CATALOG_BY_ID["oled.sleepy"].sim.oled).toEqual({ kind: "eyes", eyes: "sleepy" });
   });

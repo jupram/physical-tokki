@@ -103,6 +103,15 @@ static void expect_error(size_t index, const char *code)
     cJSON_Delete(value);
 }
 
+static void expect_accepted(size_t index)
+{
+    cJSON *value = message(index);
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(value, "ok")));
+    cJSON *result = cJSON_GetObjectItemCaseSensitive(value, "result");
+    assert(cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(result, "accepted")));
+    cJSON_Delete(value);
+}
+
 static void expect_event(size_t index, const char *event, const char *id)
 {
     cJSON *value = message(index);
@@ -179,6 +188,7 @@ static void test_catalog(void)
     unsigned reference_tones = 0;
     unsigned sky_scenes = 0;
     unsigned sleeping_eyes = 0;
+    unsigned scrolling_text = 0;
     do {
         char request[160];
         snprintf(request, sizeof(request),
@@ -213,6 +223,12 @@ static void test_catalog(void)
                 assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "oled") == 0);
                 ++sleeping_eyes;
             }
+            if (strcmp(expected->id, "oled.scrolling_text") == 0) {
+                assert(discovered == 48);
+                assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "name")->valuestring, "Scrolling text") == 0);
+                assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "oled") == 0);
+                ++scrolling_text;
+            }
         }
         assert((size_t) cJSON_GetObjectItemCaseSensitive(result, "total")->valueint == tokki_action_count());
         cJSON *next = cJSON_GetObjectItemCaseSensitive(result, "nextCursor");
@@ -224,6 +240,7 @@ static void test_catalog(void)
     assert(reference_tones == 4);
     assert(sky_scenes == 2);
     assert(sleeping_eyes == 1);
+    assert(scrolling_text == 1 && discovered == 48);
     assert(output_count == (discovered + TOKKI_CATALOG_PAGE_SIZE - 1) / TOKKI_CATALOG_PAGE_SIZE);
 
     char beyond_catalog[32];
@@ -306,7 +323,7 @@ static void test_queue_and_lifecycle(void)
     expect_error(output_count - 1, "invalid_params");
     feed(&protocol, "TOKKI/1 {\"id\":\"bad\",\"method\":\"oled.marquee\",\"params\":{\"text\":\"\"}}\n");
     expect_error(output_count - 1, "invalid_params");
-    feed(&protocol, "TOKKI/1 {\"id\":\"bad\",\"method\":\"oled.marquee\",\"params\":{\"text\":\"12345678901234567890123456789012345678901\"}}\n");
+    feed(&protocol, "TOKKI/1 {\"id\":\"bad\",\"method\":\"oled.marquee\",\"params\":{\"text\":\"123456789012345678901234567890123456789012345678901\"}}\n");
     expect_error(output_count - 1, "invalid_params");
     feed(&protocol, "TOKKI/1 {\"id\":\"bad\",\"method\":\"oled.marquee\",\"params\":{\"text\":\"ok\",\"extra\":true}}\n");
     expect_error(output_count - 1, "invalid_params");
@@ -314,6 +331,123 @@ static void test_queue_and_lifecycle(void)
     feed(&protocol, "TOKKI/1 {\"id\":\"bad\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.blink\"}}\n");
     expect_error(output_count - 1, "internal_error");
     assert(protocol.count == 0);
+}
+
+static void test_scrolling_text_protocol(void)
+{
+    tokki_protocol_t protocol;
+    tokki_job_t job;
+    init(&protocol, true);
+    feed(&protocol, "TOKKI/1 {\"id\":\"eyes\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.curious\"}}\n");
+    feed(&protocol, "TOKKI/1 {\"id\":\"title\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.scrolling_text\",\"text\":\"12345678901234567890123456789012345678901234567890\"}}\n");
+    feed(&protocol, "TOKKI/1 {\"id\":\"sound\",\"method\":\"action.run\",\"params\":{\"actionId\":\"speaker.trill\"}}\n");
+    feed(&protocol, "TOKKI/1 {\"id\":\"manual\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.scrolling_text\"}}\n");
+    assert(protocol.count == 4 && output_count == 4);
+    for (size_t index = 0; index < 4; ++index) expect_accepted(index);
+    feed(&protocol, "TOKKI/1 {\"id\":\"full\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.scrolling_text\",\"text\":\"one more\"}}\n");
+    expect_error(4, "device_busy");
+    assert(protocol.count == 4);
+
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_SPEAKER, &job));
+    assert(strcmp(job.request_id, "sound") == 0 && job.text[0] == '\0');
+    tokki_protocol_finish(&protocol, &job, ESP_OK);
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
+    assert(strcmp(job.request_id, "eyes") == 0 && job.text[0] == '\0');
+    tokki_protocol_finish(&protocol, &job, ESP_OK);
+    expect_event(output_count - 1, "action.completed", "eyes");
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
+    expect_event(output_count - 1, "action.started", "title");
+    assert(strcmp(job.action_id, "oled.scrolling_text") == 0);
+    assert(strlen(job.text) == 50 && strcmp(job.text, "12345678901234567890123456789012345678901234567890") == 0);
+    tokki_protocol_finish(&protocol, &job, ESP_FAIL);
+    expect_event(output_count - 1, "action.failed", "title");
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
+    assert(strcmp(job.request_id, "manual") == 0 && strcmp(job.text, "Hello from Tokki!") == 0);
+    tokki_protocol_finish(&protocol, &job, ESP_OK);
+    expect_event(output_count - 1, "action.completed", "manual");
+    assert(protocol.count == 0);
+
+    const char *invalid_params[] = {
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"\"}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"123456789012345678901234567890123456789012345678901\"}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":null}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":42}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":true}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":[]}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":{}}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"line\\nfeed\"}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"\\t\"}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"\\u001f\"}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"\\u007f\"}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"\\u00e9\"}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"ok\",\"extra\":true}",
+        "{\"actionId\":\"oled.scrolling_text\",\"extra\":true}",
+        "{\"actionId\":\"oled.scrolling_text\",\"text\":\"ok\",\"text\":\"duplicate\"}",
+        "{\"actionId\":\"oled.scrolling_text\",\"actionId\":\"oled.scrolling_text\"}",
+        "{\"actionId\":\"oled.curious\",\"text\":\"not allowed\"}",
+        "{\"actionId\":\"oled.marquee\",\"text\":\"not a catalog action\"}",
+        "{\"actionId\":\"speaker.trill\",\"text\":\"not allowed\"}",
+        "{\"actionId\":\"oled.nope\",\"text\":\"not allowed\"}",
+        "{\"text\":\"missing actionId\"}",
+    };
+    for (size_t index = 0; index < sizeof(invalid_params) / sizeof(invalid_params[0]); ++index) {
+        char request[300];
+        snprintf(request, sizeof(request),
+                 "TOKKI/1 {\"id\":\"bad\",\"method\":\"action.run\",\"params\":%s}\n", invalid_params[index]);
+        feed(&protocol, request);
+        expect_error(output_count - 1, "invalid_params");
+        assert(protocol.count == 0);
+    }
+    feed(&protocol, "TOKKI/1 {\"id\":\"bad\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.scrolling_text\",\"text\":\"bad\\u0000text\"}}\n");
+    expect_error(output_count - 1, "invalid_request");
+    feed(&protocol, "TOKKI/1 {\"id\":\"bad\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.scrolling_text\",\"text\":}}\n");
+    expect_error(output_count - 1, "invalid_request");
+    feed(&protocol, "TOKKI/1 {\"id\":\"space\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.scrolling_text\",\"text\":\" \"}}\n");
+    expect_accepted(output_count - 1);
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
+    assert(strcmp(job.text, " ") == 0);
+    tokki_protocol_finish(&protocol, &job, ESP_OK);
+    feed(&protocol, "TOKKI/1 {\"id\":\"escaped\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.scrolling_text\",\"text\":\" ~\\\"\\\\\"}}\n");
+    expect_accepted(output_count - 1);
+    assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_OLED, &job));
+    assert(strcmp(job.text, " ~\"\\") == 0);
+    tokki_protocol_finish(&protocol, &job, ESP_OK);
+    protocol.ready = false;
+    feed(&protocol, "TOKKI/1 {\"id\":\"not-ready\",\"method\":\"action.run\",\"params\":{\"actionId\":\"oled.scrolling_text\"}}\n");
+    expect_error(output_count - 1, "internal_error");
+    assert(protocol.count == 0);
+}
+
+static void test_legacy_text_limits(void)
+{
+    const char *methods[] = {"oled.marquee", "neopixel.notification"};
+    for (unsigned method = 0; method < 2; ++method) {
+        tokki_protocol_t protocol;
+        tokki_job_t job;
+        init(&protocol, true);
+        for (unsigned length = 40; length <= 51; ++length) {
+            char text[52];
+            memset(text, 'A', length);
+            text[length] = '\0';
+            char request[256];
+            snprintf(request, sizeof(request),
+                     "TOKKI/1 {\"id\":\"legacy\",\"method\":\"%s\",\"params\":{\"text\":\"%s\"%s}}\n",
+                     methods[method], text, method == 1 ? ",\"color\":\"blue\"" : "");
+            feed(&protocol, request);
+            if (length == 51) {
+                expect_error(output_count - 1, "invalid_params");
+                assert(protocol.count == 0);
+                continue;
+            }
+            expect_accepted(output_count - 1);
+            assert(tokki_protocol_start_next_for_device(&protocol,
+                   method == 0 ? TOKKI_DEVICE_OLED : TOKKI_DEVICE_NEOPIXEL, &job));
+            assert(strcmp(job.text, text) == 0);
+            assert(strcmp(job.action_id, method == 0 ? "oled.marquee" : TOKKI_NOTIFICATION_LIGHT_BLUE_ACTION_ID) == 0);
+            tokki_protocol_finish(&protocol, &job, ESP_OK);
+            expect_event(output_count - 1, "action.completed", "legacy");
+        }
+    }
 }
 
 static void expect_idle_frame(tokki_idle_t *idle, pet_eye_expression_t expression, unsigned frame)
@@ -532,6 +666,8 @@ int main(int argc, char **argv)
     test_framing_and_validation();
     test_catalog();
     test_queue_and_lifecycle();
+    test_scrolling_text_protocol();
+    test_legacy_text_limits();
     test_idle();
     test_idle_neopixel();
     puts("PASS: serial framing, catalog, per-device FIFO/lifecycle, shuffled idle eyes, intermittent teal breathing");

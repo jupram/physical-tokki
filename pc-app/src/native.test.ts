@@ -7,6 +7,7 @@ describe("native serial bridge", () => {
     const client = createClient(false, call);
     for (const operation of [() => client.ports(), () => client.snapshot(), () => client.connect("COM5"),
       () => client.disconnect(), () => client.refresh(), () => client.run("discovered.action"),
+      () => client.run("oled.scrolling_text", "Custom title"),
       () => client.marquee("Teams: Build 42!"), () => client.notificationSnapshot(),
       () => client.requestNotificationAccess(), () => client.setNotificationRelay(true)]) {
       await expect(operation()).rejects.toThrow("Native desktop app required");
@@ -41,6 +42,30 @@ describe("native serial bridge", () => {
     const call = vi.fn().mockRejectedValue(new Error("Serial worker unavailable"));
     await expect(createClient(true, call).run("a")).rejects.toThrow("Serial worker unavailable");
     expect(call).toHaveBeenCalledTimes(1);
+  });
+
+  it("forwards custom scrolling text verbatim and omits absent text", async () => {
+    const call = vi.fn().mockResolvedValue(undefined);
+    const client = createClient(true, call);
+    await client.run("oled.scrolling_text", 'Build "42" \\ ready!');
+    await client.run("oled.scrolling_text");
+    await client.run("oled.scrolling_text", undefined);
+    expect(call.mock.calls).toEqual([
+      ["serial_run", { actionId: "oled.scrolling_text", text: 'Build "42" \\ ready!' }],
+      ["serial_run", { actionId: "oled.scrolling_text" }],
+      ["serial_run", { actionId: "oled.scrolling_text" }],
+    ]);
+  });
+
+  it("returns notification FIFO snapshots unchanged with qualified gesture IDs", async () => {
+    const snapshot = {
+      supported: true, permission: "allowed", enabled: true, pending: 1,
+      queued: [{ source: "Microsoft Teams", text: "New message", oled: "oled.curious", sound: "speaker.trill", light: "neopixel.rainbow" }],
+      lastEvent: null, lastError: null,
+    };
+    const call = vi.fn().mockResolvedValue(snapshot);
+    expect(await createClient(true, call).notificationSnapshot()).toBe(snapshot);
+    expect(call).toHaveBeenCalledExactlyOnceWith("notification_snapshot", undefined);
   });
 
   it("counts queued/current work from real backend lifecycle states only", () => {
