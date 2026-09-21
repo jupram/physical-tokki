@@ -146,24 +146,43 @@ Disconnecting the PC app does not cancel already accepted gestures.
 
 ## Autonomous idle behavior
 
-When the action queue is empty, the same hardware worker draws a repeating
-sequence of happy/blinking eyes, left/right glances, and curious eyes. It uses
-the existing renderer at a nominal 60 ms per frame, not blocking gesture calls.
-A queued command wakes the inter-frame wait and runs after the current OLED
-write finishes. No concurrent idle and commanded writes occur on any driver.
-Physical I/O latency or an OLED initialization timeout can delay handoff; this
-is not a hard real-time latency guarantee.
+When a device has no queued or executing action, its existing worker may
+render idle frames. OLED and NeoPixel idle independently, so their animations
+overlap naturally; speaker and status LED have no autonomous animations.
+No extra idle task or blocking gesture runner is used.
 
-After the queue drains, the idle sequence restarts with happy eyes. This
-intentionally replaces the last commanded OLED frame after its gesture's
-finite run finishes (including the three-second drink-water message).
-Idle runs even when no PC is connected. `hello` and discovery do not pause it.
+The OLED holds centered open eyes for 0.6-1.2 seconds between animations. It
+shuffles eight choices: blink, look left, look right, look up, happy, curious,
+lovey-dovey, and shy. Each is selected once per shuffled round, with no
+immediate repeat across rounds. Left and right glances each append a
+nine-frame crescent blink after the pupils return to center: look -> center
+-> blink -> calm hold. These two extra blinks do not consume shuffled choices.
+Animation frames retain their nominal 60 ms timing, so each added blink lasts
+0.54 seconds. The last frame re-centers the eyes before the next calm hold.
 
-A failed idle display write emits
+The NeoPixel stays dark for a randomly chosen 6-14 seconds, then plays the
+existing teal breathing fade: 33 frames at 60 ms (1.98 seconds), with green
+and blue rising from 0 to 32 and back to 0; red remains off. It then starts
+another dark pause. Each device has separately seeded idle random state.
+
+A queued command wakes its device's idle wait immediately and runs after the
+current hardware write finishes. Unrelated notifications do not shorten
+frames, pauses, or error retry delays. No concurrent idle and commanded writes
+occur on any driver. Physical I/O latency or an OLED initialization timeout
+can delay handoff; this is not a hard real-time latency guarantee.
+
+After that device's queue drains, OLED restarts with calm open eyes and
+NeoPixel restarts with a dark pause. This intentionally replaces the last
+commanded frame after its finite run finishes (including the three-second
+drink-water message). Other devices continue independently. Idle runs even
+without a PC connection; `hello` and discovery do not pause it.
+
+A failed idle OLED or NeoPixel write emits
 `{"event":"idle.error","data":{"code":"driver_error","message":"..."}}` and
-retries after five seconds to avoid a tight error loop. Incoming PC gestures
-still wake that wait immediately, so a missing OLED does not prevent LED,
-NeoPixel, or speaker commands.
+retries after five seconds to avoid a tight error loop; firmware logs identify
+the failing device. The animation state advances only on successful writes.
+Incoming PC gestures still wake that wait immediately, so a failing idle
+device does not prevent commands on other devices.
 
 Startup and runtime hardware failures also latch the onboard red status LED on
 until reset. Later successful operations do not clear it; `led.blink` cannot

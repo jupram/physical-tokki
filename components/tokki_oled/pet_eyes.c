@@ -12,8 +12,16 @@ typedef struct {
     int pupil_y;
     int pupil_radius_x;
     int pupil_radius_y;
-    int openness;
+    int closure;
+    int upper_lid;
+    int lid_slant;
+    bool heart_pupil;
 } eye_geometry_t;
+
+typedef struct {
+    unsigned int frame;
+    int value;
+} motion_key_t;
 
 typedef struct {
     uint8_t *pixels;
@@ -154,227 +162,298 @@ static void draw_quadratic_curve(canvas_t *canvas,
     fill_ellipse(canvas, x1, y1, half_thickness, half_thickness, true);
 }
 
-static int blink_openness(unsigned int frame)
+static int interpolate(int from, int to, int percent)
 {
-    static const int blink_curve[] = {100, 78, 46, 14, 6, 14, 46, 78};
-    unsigned int position = frame % 48;
-    if (position < 34 || position >= 42) {
-        return 100;
+    return from + (to - from) * percent / 100;
+}
+
+static int sample_motion(const motion_key_t *keys, size_t count, unsigned int frame)
+{
+    for (size_t i = 1; i < count; ++i) {
+        if (frame <= keys[i].frame) {
+            int phase = (int) ((frame - keys[i - 1].frame) * 100 /
+                              (keys[i].frame - keys[i - 1].frame));
+            int eased = phase * phase * (300 - 2 * phase) / 10000;
+            return interpolate(keys[i - 1].value, keys[i].value, eased);
+        }
     }
-    return blink_curve[position - 34];
+    return keys[count - 1].value;
 }
 
-static int pupil_saccade(unsigned int frame)
+static int blink_closure(unsigned int frame)
 {
-    static const int positions[] = {0, 0, -2, -4, -4, -1, 0, 3, 4, 4, 1, 0};
-    return positions[(frame / 3) % (
-        sizeof(positions) / sizeof(positions[0])
-    )];
+    /* oled.blink and oled.wink enter directly at frame 34. */
+    static const int closure[] = {0, 25, 55, 85, 100, 85, 55, 25, 0};
+    return frame >= 34 && frame <= 42 ? closure[frame - 34] : 0;
 }
 
-static void draw_closed_lid(canvas_t *canvas,
-                            const eye_geometry_t *eye,
-                            bool happy)
+static int animate_pupil_overshoot(unsigned int frame)
 {
-    int half_width = eye->radius_x;
-    int center_y = eye->center_y + (happy ? -2 : 2);
-    int curve = happy ? -5 : 4;
+    static const motion_key_t keys[] = {
+        {0, 0}, {4, 125}, {7, 100}, {15, 100},
+        {19, -12}, {22, 0}, {23, 0},
+    };
+    return sample_motion(keys, sizeof(keys) / sizeof(keys[0]), frame);
+}
 
-    draw_line(canvas,
-              eye->center_x - half_width,
-              center_y,
-              eye->center_x,
-              center_y + curve,
-              true);
-    draw_line(canvas,
-              eye->center_x,
-              center_y + curve,
-              eye->center_x + half_width,
-              center_y,
-              true);
-    draw_line(canvas,
-              eye->center_x - half_width,
-              center_y + 1,
-              eye->center_x,
-              center_y + curve + 1,
-              true);
-    draw_line(canvas,
-              eye->center_x,
-              center_y + curve + 1,
-              eye->center_x + half_width,
-              center_y + 1,
-              true);
+static void animate_squash_stretch(eye_geometry_t *eye, int closure)
+{
+    eye->closure = closure;
+    eye->radius_x += 3 * closure / 100;
+    eye->radius_y = interpolate(eye->radius_y, 7, closure);
+    eye->center_y -= 2 * closure / 100;
+    eye->pupil_y = eye->center_y + 5 * closure / 100;
+    eye->pupil_radius_y = interpolate(eye->pupil_radius_y, 3, closure);
+}
+
+static void draw_closed_crescent_eye(canvas_t *canvas, const eye_geometry_t *eye)
+{
+    draw_quadratic_curve(canvas,
+                         eye->center_x - eye->radius_x, eye->center_y + 3,
+                         eye->center_x, eye->center_y - 13,
+                         eye->center_x + eye->radius_x, eye->center_y + 3,
+                         3);
+}
+
+static void draw_sleep_marks(canvas_t *canvas, unsigned int frame)
+{
+    if (frame < 8 || frame > 39) {
+        return;
+    }
+    for (unsigned i = 0; i < 3; ++i) {
+        int age = (int) ((frame - 8 + i * 8) % 24);
+        int x = 78 + age;
+        int y = 22 - age * 3 / 4;
+        int size = 3 + age / 6;
+        int thickness = size >= 5 ? 2 : 1;
+        for (int offset = 0; offset < thickness; ++offset) {
+            draw_line(canvas, x, y + offset, x + size, y + offset, true);
+            draw_line(canvas, x + size, y + offset, x, y + size + 1 + offset, true);
+            draw_line(canvas, x, y + size + 1 + offset,
+                      x + size, y + size + 1 + offset, true);
+        }
+    }
+}
+
+static void apply_lid_masks(canvas_t *canvas, const eye_geometry_t *eye)
+{
+    for (int x = -eye->radius_x; x <= eye->radius_x; ++x) {
+        int upper = -eye->radius_y + eye->upper_lid;
+        if (eye->upper_lid > 0) {
+            upper += eye->lid_slant * x / eye->radius_x +
+                     2 * x * x / (eye->radius_x * eye->radius_x);
+        }
+        /* The lower lid rises into an arch as the oval squashes to a smile. */
+        int lower = eye->radius_y -
+                    (eye->radius_y + 4) * eye->closure / 100 +
+                    8 * eye->closure * x * x /
+                    (100 * eye->radius_x * eye->radius_x);
+        for (int y = -eye->radius_y; y <= eye->radius_y; ++y) {
+            if (y < upper || y > lower) {
+                set_pixel(canvas, eye->center_x + x, eye->center_y + y, false);
+            }
+        }
+    }
+}
+
+static void draw_heart_pupil(canvas_t *canvas, const eye_geometry_t *eye)
+{
+    int lobe_radius = eye->pupil_radius_x / 2;
+    int lobe_offset = eye->pupil_radius_x - lobe_radius;
+    int top = -eye->pupil_radius_y / 3;
+    fill_ellipse(canvas, eye->pupil_x - lobe_offset, eye->pupil_y + top,
+                 lobe_radius, lobe_radius, false);
+    fill_ellipse(canvas, eye->pupil_x + lobe_offset, eye->pupil_y + top,
+                 lobe_radius, lobe_radius, false);
+    for (int y = top; y <= eye->pupil_radius_y; ++y) {
+        int half_width = (eye->pupil_radius_y - y) * eye->pupil_radius_x /
+                         (eye->pupil_radius_y - top);
+        draw_line(canvas, eye->pupil_x - half_width, eye->pupil_y + y,
+                  eye->pupil_x + half_width, eye->pupil_y + y, false);
+    }
 }
 
 static void draw_open_eye(canvas_t *canvas, const eye_geometry_t *eye)
 {
-    int visible_radius_y = eye->radius_y * eye->openness / 100;
-    visible_radius_y = clamp_int(visible_radius_y, 1, eye->radius_y);
+    fill_ellipse(canvas, eye->center_x, eye->center_y,
+                 eye->radius_x, eye->radius_y, true);
+    if (eye->heart_pupil) {
+        draw_heart_pupil(canvas, eye);
+    } else {
+        fill_ellipse(canvas, eye->pupil_x, eye->pupil_y,
+                     eye->pupil_radius_x, eye->pupil_radius_y, false);
 
-    fill_ellipse(canvas,
-                 eye->center_x,
-                 eye->center_y,
-                 eye->radius_x,
-                 visible_radius_y,
-                 true);
-
-    int pupil_y = clamp_int(
-        eye->pupil_y,
-        eye->center_y - visible_radius_y + eye->pupil_radius_y,
-        eye->center_y + visible_radius_y - eye->pupil_radius_y
-    );
-    fill_ellipse(canvas,
-                 eye->pupil_x,
-                 pupil_y,
-                 eye->pupil_radius_x,
-                 eye->pupil_radius_y,
-                 false);
-
-    fill_ellipse(canvas,
-                 eye->pupil_x - 2,
-                 pupil_y - 3,
-                 2,
-                 2,
-                 true);
-    set_pixel(canvas, eye->pupil_x + 2, pupil_y + 2, true);
-}
-
-static void draw_eyebrows(canvas_t *canvas,
-                          pet_eye_expression_t expression,
-                          unsigned int frame)
-{
-    static const int motion[] = {0, -1, -1, 0, 1, 1, 0, 0};
-    int vertical_motion = motion[(frame / 4) % (
-        sizeof(motion) / sizeof(motion[0])
-    )];
-
-    switch (expression) {
-    case PET_EYES_SURPRISED:
-        draw_quadratic_curve(canvas, 24, 10, 40, 0, 56, 10, 3);
-        draw_quadratic_curve(canvas, 72, 10, 88, 0, 104, 10, 3);
-        break;
-    case PET_EYES_HAPPY:
-    case PET_EYES_WINK:
-    case PET_EYES_LOOK_LEFT:
-    case PET_EYES_LOOK_RIGHT:
-    case PET_EYES_LOOK_UP:
-    case PET_EYES_LOOK_DOWN:
-    case PET_EYES_SLEEPY:
-        draw_quadratic_curve(canvas,
-                             22, 16 + vertical_motion,
-                             39, 7 + vertical_motion,
-                             57, 14 + vertical_motion,
-                             3);
-        draw_quadratic_curve(canvas,
-                             71, 14 + vertical_motion,
-                             89, 7 + vertical_motion,
-                             106, 16 + vertical_motion,
-                             3);
-        break;
-    case PET_EYES_SAD:
-        draw_quadratic_curve(canvas,
-                             22, 19,
-                             39, 16 + vertical_motion,
-                             57, 9 + vertical_motion,
-                             3);
-        draw_quadratic_curve(canvas,
-                             71, 9 + vertical_motion,
-                             89, 16 + vertical_motion,
-                             106, 19,
-                             3);
-        break;
-    case PET_EYES_CURIOUS:
-        draw_quadratic_curve(canvas,
-                             19, 13 + vertical_motion,
-                             39, 1 + vertical_motion,
-                             59, 10 + vertical_motion,
-                             3);
-        draw_quadratic_curve(canvas,
-                             74, 20,
-                             89, 16,
-                             105, 20,
-                             3);
-        break;
+        /* Pin pupils stay solid; catchlights are clipped by the lids with the pupil. */
+        if (eye->pupil_radius_x >= 5 && eye->pupil_radius_y >= 7) {
+            fill_ellipse(canvas, eye->pupil_x - 2, eye->pupil_y - 3, 1, 1, true);
+        }
     }
+    apply_lid_masks(canvas, eye);
 }
 
-static void draw_teardrop(canvas_t *canvas, int center_x, int tip_y)
+static void configure_expression_geometry(eye_geometry_t eyes[2],
+                                          pet_eye_expression_t expression,
+                                          unsigned int frame)
 {
-    set_pixel(canvas, center_x, tip_y, true);
-    set_pixel(canvas, center_x - 1, tip_y + 1, true);
-    set_pixel(canvas, center_x, tip_y + 1, true);
-    set_pixel(canvas, center_x + 1, tip_y + 1, true);
-    fill_ellipse(canvas, center_x, tip_y + 4, 3, 3, true);
-}
-
-static void configure_expression(eye_geometry_t eyes[2],
-                                 pet_eye_expression_t expression,
-                                 unsigned int frame)
-{
-    int movement = pupil_saccade(frame);
-    int openness = blink_openness(frame);
-
-    eyes[0] = (eye_geometry_t) {
-        .center_x = 40,
-        .center_y = 32,
-        .radius_x = 17,
-        .radius_y = 17,
-        .pupil_x = 40 + movement,
-        .pupil_y = 32,
-        .pupil_radius_x = 6,
-        .pupil_radius_y = 9,
-        .openness = openness,
-    };
-    eyes[1] = (eye_geometry_t) {
-        .center_x = 88,
-        .center_y = 32,
-        .radius_x = 17,
-        .radius_y = 17,
-        .pupil_x = 88 + movement,
-        .pupil_y = 32,
-        .pupil_radius_x = 6,
-        .pupil_radius_y = 9,
-        .openness = openness,
-    };
+    unsigned int position = frame % 48;
+    unsigned int short_position = frame % 24;
+    for (int i = 0; i < 2; ++i) {
+        eyes[i] = (eye_geometry_t) {
+            .center_x = 40 + i * 48,
+            .center_y = 32,
+            .radius_x = 17,
+            .radius_y = 22,
+            .pupil_x = 40 + i * 48,
+            .pupil_y = 32,
+            .pupil_radius_x = 6,
+            .pupil_radius_y = 10,
+        };
+    }
 
     switch (expression) {
-    case PET_EYES_SURPRISED:
-        eyes[0].radius_y = 19;
-        eyes[1].radius_y = 19;
-        eyes[0].pupil_radius_x = 4;
-        eyes[1].pupil_radius_x = 4;
-        eyes[0].pupil_radius_y = 5;
-        eyes[1].pupil_radius_y = 5;
-        break;
-    case PET_EYES_HAPPY:
-    case PET_EYES_WINK:
-    case PET_EYES_LOOK_LEFT:
-    case PET_EYES_LOOK_RIGHT:
-    case PET_EYES_LOOK_UP:
-    case PET_EYES_LOOK_DOWN:
-    case PET_EYES_SLEEPY:
-        eyes[0].openness = openness * 72 / 100;
-        eyes[1].openness = openness * 72 / 100;
-        eyes[0].pupil_y = 30;
-        eyes[1].pupil_y = 30;
-        if (expression == PET_EYES_WINK) {
-            eyes[0].openness = 72;
+    case PET_EYES_HAPPY: {
+        static const motion_key_t smile[] = {
+            {0, 0}, {2, 0}, {7, 100}, {22, 100}, {29, 0}, {33, 0},
+        };
+        int closure = position < 34 ?
+            sample_motion(smile, sizeof(smile) / sizeof(smile[0]), position) :
+            blink_closure(position);
+        for (int i = 0; i < 2; ++i) {
+            animate_squash_stretch(&eyes[i], closure);
         }
         break;
+    }
     case PET_EYES_SAD:
-        eyes[0].pupil_y = 36;
-        eyes[1].pupil_y = 36;
+        for (int i = 0; i < 2; ++i) {
+            eyes[i].radius_y = 20;
+            eyes[i].upper_lid = 9;
+            eyes[i].lid_slant = i == 0 ? -4 : 4;
+            eyes[i].pupil_x += i == 0 ? 2 : -2;
+            eyes[i].pupil_y += 5;
+        }
         break;
-    case PET_EYES_CURIOUS:
-        eyes[0].radius_x = 19;
-        eyes[0].radius_y = 19;
-        eyes[0].pupil_x = 40 + movement;
-        eyes[1].radius_x = 13;
-        eyes[1].radius_y = 14;
+    case PET_EYES_CURIOUS: {
+        static const motion_key_t drift[] = {
+            {0, 0}, {6, 5}, {10, 4}, {19, 4}, {27, -4},
+            {32, -3}, {39, -3}, {47, 0},
+        };
+        static const motion_key_t stretch[] = {
+            {0, 0}, {5, 100}, {10, 0}, {26, 0},
+            {31, 75}, {36, 0}, {47, 0},
+        };
+        int spring = sample_motion(stretch, sizeof(stretch) / sizeof(stretch[0]), position);
+        eyes[0].radius_x = 18 - spring / 100;
+        eyes[0].radius_y = 24 + 2 * spring / 100;
+        eyes[0].pupil_x += sample_motion(drift, sizeof(drift) / sizeof(drift[0]), position);
+        eyes[0].pupil_y -= 2;
+        eyes[1].radius_x = 15 + spring / 100;
+        eyes[1].radius_y = 18 - 2 * spring / 100;
+        eyes[1].center_y += 1;
+        eyes[1].upper_lid = 3;
         eyes[1].pupil_radius_x = 5;
-        eyes[1].pupil_radius_y = 7;
-        eyes[1].pupil_x = 88 - movement / 2;
+        eyes[1].pupil_radius_y = 8;
+        eyes[1].pupil_x += sample_motion(drift, sizeof(drift) / sizeof(drift[0]),
+                                          position > 2 ? position - 2 : 0);
         break;
+    }
+    case PET_EYES_SURPRISED: {
+        static const motion_key_t pop[] = {
+            {0, 0}, {2, 75}, {4, 125}, {7, 100}, {47, 100},
+        };
+        int amount = sample_motion(pop, sizeof(pop) / sizeof(pop[0]), position);
+        int shrink = clamp_int(amount, 0, 100);
+        for (int i = 0; i < 2; ++i) {
+            eyes[i].radius_x += amount / 100;
+            eyes[i].radius_y += 5 * amount / 100;
+            eyes[i].pupil_radius_x = interpolate(6, 2, shrink);
+            eyes[i].pupil_radius_y = interpolate(10, 2, shrink);
+        }
+        break;
+    }
+    case PET_EYES_WINK:
+        animate_squash_stretch(&eyes[1], blink_closure(position));
+        break;
+    case PET_EYES_LOOK_LEFT:
+    case PET_EYES_LOOK_RIGHT:
+    case PET_EYES_LOOK_UP:
+    case PET_EYES_LOOK_DOWN: {
+        int amount = animate_pupil_overshoot(short_position);
+        for (int i = 0; i < 2; ++i) {
+            if (expression == PET_EYES_LOOK_LEFT || expression == PET_EYES_LOOK_RIGHT) {
+                eyes[i].pupil_x += (expression == PET_EYES_LOOK_LEFT ? -8 : 8) * amount / 100;
+            } else {
+                eyes[i].pupil_y += (expression == PET_EYES_LOOK_UP ? -6 : 6) * amount / 100;
+            }
+        }
+        break;
+    }
+    case PET_EYES_SLEEPY: {
+        static const motion_key_t droop[] = {
+            {0, 0}, {5, 50}, {13, 100}, {17, 100}, {22, 0}, {23, 0},
+        };
+        int amount = sample_motion(droop, sizeof(droop) / sizeof(droop[0]), short_position);
+        for (int i = 0; i < 2; ++i) {
+            eyes[i].radius_y -= 3 * amount / 100;
+            eyes[i].upper_lid = 26 * amount / 100;
+            eyes[i].lid_slant = (i == 0 ? 2 : -2) * amount / 100;
+            eyes[i].pupil_y += 4 * amount / 100;
+        }
+        break;
+    }
+    case PET_EYES_LOVEY_DOVEY: {
+        static const motion_key_t heartbeat[] = {
+            {0, 0}, {6, 100}, {12, 0}, {20, 0}, {26, 100}, {32, 0}, {47, 0},
+        };
+        static const motion_key_t smile[] = {
+            {0, 0}, {33, 0}, {38, 100}, {41, 100}, {46, 0}, {47, 0},
+        };
+        int pulse = sample_motion(heartbeat, sizeof(heartbeat) / sizeof(heartbeat[0]), position);
+        int closure = sample_motion(smile, sizeof(smile) / sizeof(smile[0]), position);
+        for (int i = 0; i < 2; ++i) {
+            eyes[i].heart_pupil = position < 38;
+            if (eyes[i].heart_pupil) {
+                eyes[i].radius_x += pulse / 100;
+                eyes[i].radius_y += 2 * pulse / 100;
+                eyes[i].pupil_radius_x = 8 + 2 * pulse / 100;
+                eyes[i].pupil_radius_y = 8 + 2 * pulse / 100;
+            }
+            animate_squash_stretch(&eyes[i], closure);
+        }
+        break;
+    }
+    case PET_EYES_SHY: {
+        static const motion_key_t retreat[] = {
+            {0, 0}, {8, 100}, {16, 100}, {23, 35}, {28, 35},
+            {34, 85}, {39, 85}, {46, 0}, {47, 0},
+        };
+        int amount = sample_motion(retreat, sizeof(retreat) / sizeof(retreat[0]), position);
+        for (int i = 0; i < 2; ++i) {
+            eyes[i].center_y += 2 * amount / 100;
+            eyes[i].radius_y -= 4 * amount / 100;
+            eyes[i].upper_lid = (10 + i * 2) * amount / 100;
+            eyes[i].closure = 20 * amount / 100;
+            eyes[i].pupil_x += (i == 0 ? 5 : -5) * amount / 100;
+            eyes[i].pupil_y = eyes[i].center_y + 6 * amount / 100;
+            eyes[i].pupil_radius_y -= amount / 100;
+        }
+        break;
+    }
+    case PET_EYES_SLEEPING: {
+        static const motion_key_t doze[] = {
+            {0, 0}, {8, 100}, {39, 100}, {46, 0}, {47, 0},
+        };
+        static const motion_key_t breathe[] = {
+            {0, 0}, {8, 0}, {20, 100}, {32, 0}, {39, 0}, {47, 0},
+        };
+        int closure = sample_motion(doze, sizeof(doze) / sizeof(doze[0]), position);
+        int bob = sample_motion(breathe, sizeof(breathe) / sizeof(breathe[0]), position);
+        for (int i = 0; i < 2; ++i) {
+            animate_squash_stretch(&eyes[i], closure);
+            eyes[i].center_y += (5 + bob / 60) * closure / 100;
+            eyes[i].pupil_y += (5 + bob / 60) * closure / 100;
+        }
+        break;
+    }
     }
 }
 
@@ -401,39 +480,16 @@ void pet_eyes_render(uint8_t *framebuffer,
     };
 
     eye_geometry_t eyes[2];
-    configure_expression(eyes, expression, frame);
-    if (expression >= PET_EYES_LOOK_LEFT && expression <= PET_EYES_SLEEPY) {
-        unsigned position = frame % 24;
-        int amount = position < 5 ? (int) position :
-                     position < 16 ? 4 : position < 20 ? 20 - (int) position : 0;
-        for (size_t index = 0; index < 2; ++index) {
-            eyes[index].pupil_x = eyes[index].center_x;
-            eyes[index].pupil_y = 30;
-            eyes[index].openness = 72;
-            if (expression == PET_EYES_LOOK_LEFT || expression == PET_EYES_LOOK_RIGHT) {
-                eyes[index].pupil_x += expression == PET_EYES_LOOK_LEFT ? -amount * 2 : amount * 2;
-            } else if (expression == PET_EYES_LOOK_UP || expression == PET_EYES_LOOK_DOWN) {
-                eyes[index].pupil_y += expression == PET_EYES_LOOK_UP ? -amount : amount;
-            } else {
-                eyes[index].openness = 72 - amount * 16;
-            }
-        }
-    }
-    draw_eyebrows(&canvas, expression, frame);
+    configure_expression_geometry(eyes, expression, frame);
 
     for (size_t i = 0; i < sizeof(eyes) / sizeof(eyes[0]); ++i) {
-        if (eyes[i].openness <= 20) {
-            draw_closed_lid(&canvas, &eyes[i],
-                            expression == PET_EYES_HAPPY || expression >= PET_EYES_WINK);
+        if (eyes[i].closure == 100) {
+            draw_closed_crescent_eye(&canvas, &eyes[i]);
         } else {
             draw_open_eye(&canvas, &eyes[i]);
         }
     }
-
-    if (expression == PET_EYES_SAD) {
-        int left_phase = frame % 12;
-        int right_phase = (frame + 6) % 12;
-        draw_teardrop(&canvas, 53, 41 + left_phase * 2);
-        draw_teardrop(&canvas, 75, 41 + right_phase * 2);
+    if (expression == PET_EYES_SLEEPING) {
+        draw_sleep_marks(&canvas, frame % 48);
     }
 }

@@ -37,14 +37,14 @@ static esp_err_t run_whistle(void)
     return tokki_speaker_play(TOKKI_SPEAKER_WHISTLE);
 }
 
-static esp_err_t run_sigh(void)
+static esp_err_t run_tone_low(void)
 {
-    return tokki_speaker_play(TOKKI_SPEAKER_SIGH);
+    return tokki_speaker_play(TOKKI_SPEAKER_TONE_LOW);
 }
 
-static esp_err_t run_boing(void)
+static esp_err_t run_tone_mid(void)
 {
-    return tokki_speaker_play(TOKKI_SPEAKER_BOING);
+    return tokki_speaker_play(TOKKI_SPEAKER_TONE_MID);
 }
 
 static esp_err_t run_question(void)
@@ -52,9 +52,9 @@ static esp_err_t run_question(void)
     return tokki_speaker_play(TOKKI_SPEAKER_QUESTION);
 }
 
-static esp_err_t run_downstep(void)
+static esp_err_t run_tone_high(void)
 {
-    return tokki_speaker_play(TOKKI_SPEAKER_DOWNSTEP);
+    return tokki_speaker_play(TOKKI_SPEAKER_TONE_HIGH);
 }
 
 static esp_err_t run_sparkle(void)
@@ -67,9 +67,9 @@ static esp_err_t run_trill(void)
     return tokki_speaker_play(TOKKI_SPEAKER_TRILL);
 }
 
-static esp_err_t run_bark(void)
+static esp_err_t run_tone_rise(void)
 {
-    return tokki_speaker_play(TOKKI_SPEAKER_BARK);
+    return tokki_speaker_play(TOKKI_SPEAKER_TONE_RISE);
 }
 
 static esp_err_t run_knock(void)
@@ -117,22 +117,22 @@ const tokki_action_descriptor_t TOKKI_SPEAKER_WHISTLE_ACTION = {
     .id = "speaker.whistle", .display_name = "Rising whistle (synthesized)",
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_whistle,
 };
-const tokki_action_descriptor_t TOKKI_SPEAKER_SIGH_ACTION = {
-    .id = "speaker.sigh", .display_name = "Sleepy sigh (synthesized)",
-    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_sigh,
+const tokki_action_descriptor_t TOKKI_SPEAKER_TONE_LOW_ACTION = {
+    .id = "speaker.tone_low", .display_name = "Warm tone (440 Hz)",
+    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_tone_low,
 };
 
-const tokki_action_descriptor_t TOKKI_SPEAKER_BOING_ACTION = {
-    .id = "speaker.boing", .display_name = "Boing (synthesized)",
-    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_boing,
+const tokki_action_descriptor_t TOKKI_SPEAKER_TONE_MID_ACTION = {
+    .id = "speaker.tone_mid", .display_name = "Clear tone (660 Hz)",
+    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_tone_mid,
 };
 const tokki_action_descriptor_t TOKKI_SPEAKER_QUESTION_ACTION = {
     .id = "speaker.question", .display_name = "Question cue (synthesized)",
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_question,
 };
-const tokki_action_descriptor_t TOKKI_SPEAKER_DOWNSTEP_ACTION = {
-    .id = "speaker.downstep", .display_name = "Gentle down-step (synthesized)",
-    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_downstep,
+const tokki_action_descriptor_t TOKKI_SPEAKER_TONE_HIGH_ACTION = {
+    .id = "speaker.tone_high", .display_name = "Bright tone (880 Hz)",
+    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_tone_high,
 };
 const tokki_action_descriptor_t TOKKI_SPEAKER_SPARKLE_ACTION = {
     .id = "speaker.sparkle", .display_name = "Sparkle (synthesized)",
@@ -142,9 +142,9 @@ const tokki_action_descriptor_t TOKKI_SPEAKER_TRILL_ACTION = {
     .id = "speaker.trill", .display_name = "Trill (synthesized)",
     .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_trill,
 };
-const tokki_action_descriptor_t TOKKI_SPEAKER_BARK_ACTION = {
-    .id = "speaker.bark", .display_name = "Dog bark (CC0 recording, once)",
-    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_bark,
+const tokki_action_descriptor_t TOKKI_SPEAKER_TONE_RISE_ACTION = {
+    .id = "speaker.tone_rise", .display_name = "Rising tones (440/660/880 Hz)",
+    .device = TOKKI_DEVICE_SPEAKER, .cancellable = false, .run = run_tone_rise,
 };
 
 const tokki_action_descriptor_t TOKKI_SPEAKER_KNOCK_ACTION = {

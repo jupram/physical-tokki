@@ -16,6 +16,9 @@ export type OledEyes =
   | "look_up"
   | "look_down"
   | "sleepy"
+  | "sleeping"
+  | "lovey_dovey"
+  | "shy"
   | "blink";
 
 export type OledArt =
@@ -25,7 +28,9 @@ export type OledArt =
   | "checkmark"
   | "thinking"
   | "heart"
-  | "exclamation";
+  | "exclamation"
+  | "night_sky"
+  | "sunrise";
 
 export type OledSim =
   | { kind: "eyes"; eyes: OledEyes }
@@ -41,6 +46,10 @@ export type SpeakerSound =
   | "alert"
   | "chime"
   | "ping"
+  | "tone_low"
+  | "tone_mid"
+  | "tone_high"
+  | "tone_rise"
   | "dog_bark"
   | "bubble"
   | "whistle"
@@ -127,6 +136,9 @@ export const CATALOG: GestureDef[] = [
   eyes("oled.look_up", "Look up", "look_up", 1440),
   eyes("oled.look_down", "Look down", "look_down", 1440),
   eyes("oled.sleepy", "Sleepy eyes", "sleepy", 1440),
+  eyes("oled.sleeping", "Sleeping eyes (Zzz)", "sleeping", 4320),
+  eyes("oled.lovey_dovey", "Lovey-dovey eyes", "lovey_dovey", 4320),
+  eyes("oled.shy", "Shy eyes", "shy", 4320),
 
   // OLED art
   art("oled.drink_water", "Drink water message", "drink_water", 2000),
@@ -136,6 +148,8 @@ export const CATALOG: GestureDef[] = [
   art("oled.thinking", "Thinking dots", "thinking", 1200),
   art("oled.heart", "Heart pulse", "heart", 1440),
   art("oled.exclamation", "Exclamation mark", "exclamation", 1020),
+  art("oled.night_sky", "Night sky", "night_sky", 4320),
+  art("oled.sunrise", "Sunrise", "sunrise", 5760),
 
   // Speaker
   speaker("speaker.drink_water", "Drink water phrase", "drink_water", 1400),
@@ -143,6 +157,10 @@ export const CATALOG: GestureDef[] = [
   speaker("speaker.alert", "Short alert tone", "alert", 900),
   speaker("speaker.chime", "Completion chime", "chime", 1100),
   speaker("speaker.ping", "Short ping", "ping", 500),
+  speaker("speaker.tone_low", "Warm tone (440 Hz)", "tone_low", 800),
+  speaker("speaker.tone_mid", "Clear tone (660 Hz)", "tone_mid", 800),
+  speaker("speaker.tone_high", "Bright tone (880 Hz)", "tone_high", 800),
+  speaker("speaker.tone_rise", "Rising tones (440/660/880 Hz)", "tone_rise", 1220),
   speaker("speaker.dog_bark", "Dog bark (recording, twice)", "dog_bark", 1020),
   speaker("speaker.bubble", "Bubble pop (synthesized)", "bubble", 590),
   speaker("speaker.whistle", "Rising whistle (synthesized)", "whistle", 780),

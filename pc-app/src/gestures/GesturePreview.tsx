@@ -1,6 +1,8 @@
 import { Eye, Lightbulb, Volume2 } from "lucide-react";
 import type { LedSim, Medium, OledSim, SpeakerSim } from "./catalog";
 import { MEDIUM_LABEL } from "./catalog";
+import { SkyPreview } from "./SkyPreview";
+import { SleepingPreview } from "./SleepingPreview";
 
 export type PreviewLane<T> = { sim?: T; label: string; active: boolean };
 
@@ -24,17 +26,23 @@ const ART_GLYPH: Record<string, string> = {
   thinking: "•••",
   heart: "♥",
   exclamation: "!",
+  night_sky: "🌌",
+  sunrise: "🌅",
 };
 
-function OledView({ sim }: { sim?: OledSim }) {
+function OledView({ sim, active }: { sim?: OledSim; active: boolean }) {
   if (!sim) return <span className="pv-idle">—</span>;
   if (sim.kind === "eyes") {
+    if (sim.eyes === "sleeping") return <SleepingPreview active={active} />;
     return (
       <div className={`pv-eyes ${sim.eyes}`} aria-hidden="true">
         <span className="pv-eye" />
         <span className="pv-eye" />
       </div>
     );
+  }
+  if (sim.art === "night_sky" || sim.art === "sunrise") {
+    return <SkyPreview key={sim.art} scene={sim.art} active={active} />;
   }
   if (sim.kind === "marquee") {
     const width = sim.text.length * 12 - 2;
@@ -55,7 +63,7 @@ function OledView({ sim }: { sim?: OledSim }) {
 function LedView({ sim, active }: { sim?: LedSim; active: boolean }) {
   const rainbow = sim?.effect === "rainbow";
   const className = ["pv-led", active && sim ? `on ${sim.effect}` : ""].filter(Boolean).join(" ");
-  const style = sim && !rainbow ? ({ "--led-color": sim.color } as React.CSSProperties) : undefined;
+  const style = sim && !rainbow ? ({ "--cp-led-color": sim.color } as React.CSSProperties) : undefined;
   return (
     <div className="pv-led-stage">
       <span className={className} style={style} />
@@ -109,7 +117,7 @@ export function MediumPreview({
 }) {
   let body: React.ReactNode;
   if (medium === "oled") {
-    body = <OledView sim={lane.sim as OledSim | undefined} />;
+    body = <OledView sim={lane.sim as OledSim | undefined} active={lane.active} />;
   } else if (medium === "led") {
     body = <LedView sim={lane.sim as LedSim | undefined} active={lane.active} />;
   } else {

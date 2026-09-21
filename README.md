@@ -28,16 +28,30 @@ See [the architecture](docs/architecture.md), [gesture contribution guide](compo
 
 The root ESP-IDF application initializes the shared board, LED, and NeoPixel,
 serves the gesture registry over USB serial, and accepts manual playback
-commands from the desktop app. Four workers, one per physical device, execute
-gestures serially for their device and concurrently across devices, with four
-global waiting slots. While idle, the OLED loops through blinking, side
-glances, and curious eyes. Incoming gestures take priority at the next
-idle-frame boundary; the idle loop resumes after the queue drains. OLED and
-speaker hardware are initialized on first use.
+commands from the desktop app. Each device has its own worker, with four
+shared waiting queue slots. While idle, the OLED shuffles blinks, glances,
+happy, curious, lovey-dovey, shy, and a paired sleeping-eyes-to-night-sky
+sequence, with 0.6-1.2 seconds of calm open eyes between choices. All nine
+choices get a turn before reshuffling;
+the same shuffled choice never plays twice in a row. Each left/right glance
+also finishes with a soft 0.54-second blink before the calm pause.
+Night sky only follows sleeping eyes with floating Zzz, immediately and without
+an intervening open-eye pause. Each part runs for 2.88 seconds at the idle
+60 ms frame interval; the eyes stay closed until the sky starts, then return
+to open eyes after the sky. Sunrise remains a manual gesture.
+
+Independently, the NeoPixel plays occasional 1.98-second teal breaths with
+6-14-second dark pauses, capped at 32/255 per green/blue channel. This reuses
+the manual breathing gesture's fade rather than flashing or adding sound.
+Incoming gestures take priority on their device after the current hardware
+write; other devices' idle animations can continue. Idle resumes with a calm
+hold or dark pause after that device's queue drains, even without a PC
+connection. OLED and speaker hardware are initialized on first use.
 
 Manually triggered OLED, status LED, and RGB gestures now run 50% longer
 than the initial prototype, with unchanged frame counts, brightness, and
-final states. Idle eyes, speaker sounds, and self-test timings are unchanged.
+final states. Idle frames still use 60 ms; speaker sounds and self-test timings
+are unchanged.
 See the [gesture duration table](components/tokki_gestures/README.md#current-actions).
 
 The onboard **red status LED (GPIO13)** latches on after a startup failure,
@@ -70,7 +84,8 @@ idf.py flash monitor
 6. Use the Gestures screen to send individual actions. Acceptance, running,
    completion, and failures come from the physical device, not UI timers.
    Additional actions queue in order; a full queue reports Busy.
-7. Let the queue finish or disconnect the app: the pet returns to idle eyes.
+7. Let the queue finish or disconnect the app: the pet returns to idle eyes
+   and intermittent teal breathing.
    Disconnect does not cancel gestures already accepted by the firmware.
 8. For Teams and Outlook notifications, install the signed Windows MSIX and
   follow the [notification relay setup](docs/windows-notification-setup.md).
@@ -103,14 +118,19 @@ npm run build
 cargo test --manifest-path .\src-tauri\Cargo.toml
 ```
 
-The host suite covers all 42 gestures, including the unchanged twice-repeated
-bark and the separate CC0 single-bark recording, and additionally checks
+The host suite covers all 47 gestures, including lovey-dovey, shy and sleeping eyes,
+twinkling night sky and sunrise scenes,
+the unchanged twice-repeated bark and the four clean self-test-frequency tones,
+and additionally checks
 protocol framing, complete paginated discovery, bounded per-device FIFO
 execution, cross-device dispatch, lifecycle events, malformed input recovery,
-and one-frame idle rendering.
+shuffled idle eye/scene coverage, sleeping/night-sky preemption, breathing brightness/pause bounds, and
+worker preemption/deadline handling (including timer wraparound).
 The UART/FreeRTOS adapter and actual peripherals still need an on-device
-smoke test: send several gestures while idle, fill the queue, unplug/reconnect
-the PC, and verify idle resumes without concurrent OLED writes.
+smoke test: observe several shuffled eye rounds and breathing pauses, send
+OLED/NeoPixel gestures during idle (including during a dark pause), fill the
+queue, unplug/reconnect the PC, and verify each device resumes idle without
+concurrent writes.
 
 ## Hardware self-test
 
@@ -129,10 +149,11 @@ for the Adafruit ESP32 Feather V2:
 - Scans the STEMMA QT I2C bus on SDA GPIO22 and SCL GPIO20.
 - Detects an optional SSD1306 128x64 OLED at I2C address 0x3C.
 - When detected, uses a procedural pet-eye renderer for large happy, sad, and
-  curious eyes. It animates pupil tracking, catchlights, eyelids, natural
-  blinks, thick curved moving eyebrows, asymmetry, saccades, and staggered
-  falling teardrops, then scrolls `Hello Ram, Hiten, Shyam` horizontally in a
-  large single-line font.
+  curious eyes. Tall oval whites, smiling crescent closures, drooping lids,
+  asymmetric squash/stretch, and pupil tracking convey emotion without
+  eyebrows or falling tears. See the [eye language and timing](components/tokki_gestures/src/oled/README.md#eye-language-and-frame-contract).
+  It then scrolls `Hello Ram, Hiten, Shyam` horizontally in a large single-line
+  font.
 - Briefly illuminates the top 16 rows and lower 48 rows separately to reveal
   whether the physical OLED has yellow/blue color zones.
 

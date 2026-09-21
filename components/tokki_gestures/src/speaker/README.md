@@ -54,9 +54,9 @@ trim, normalize, pre-scale the amplitude, or overwrite the original. Firmware
 applies the 20% scaling once during playback.
 
 The upstream `speaker.dog_bark` ID and `dog_bark.wav` file remain unchanged.
-The additional `speaker.bark` ID uses `dog_bark_cc0.wav`, a different single-bark
-CC0 recording documented below. Do not regenerate one asset with the other's
-script or apply the CC0 statement to the upstream recording.
+The retired `speaker.bark` ID used `dog_bark_cc0.wav`, a different single-bark
+CC0 recording documented below. That action and its embedded playback were
+removed; do not apply its CC0 statement to the upstream double recording.
 
 `speaker.chime` adds two ascending fixed notes (784/1047 Hz, 160/240 ms), with
 a 60 ms gap. `speaker.ping` is a single 1320 Hz, 100 ms tone. Both also use the
@@ -72,10 +72,7 @@ all actions are serialized and release their I2S channel on return.
 | --- | --- | --- | --- |
 | `speaker.bubble` | 90 ms | 590 ms | 1200 to 480 Hz falling sweep; tiny acknowledgement |
 | `speaker.whistle` | 280 ms | 780 ms | 900 to 2100 Hz rising sweep; cheerful attention |
-| `speaker.sigh` | 360 ms | 860 ms | 850 to 350 Hz falling sweep; relaxed or sleepy cue |
-| `speaker.boing` | 240 ms | 740 ms | 350 to 900 Hz up, then 900 to 500 Hz down; playful bounce |
 | `speaker.question` | 270 ms | 820 ms | 700 Hz note, 50 ms gap, 950 to 1250 Hz rise; questioning inflection |
-| `speaker.downstep` | 320 ms | 860 ms | 740 then 494 Hz, 40 ms gap; gentle negative feedback |
 | `speaker.sparkle` | 270 ms | 830 ms | 1047/1319/1568 Hz, 30 ms gaps; small celebration |
 | `speaker.trill` | 210 ms | 760 ms | Three 1400 to 1700 Hz chirrups, 25 ms gaps; lively attention |
 | `speaker.knock` | 130 ms | 730 ms | Two 500 to 200 Hz taps, 100 ms gap; message cue |
@@ -84,7 +81,7 @@ all actions are serialized and release their I2S channel on return.
 These names describe stylized effects, not realistic recordings. Values are
 original parameter choices using the existing sine table and 25 ms edge fades.
 No new WAV, external sample, TTS, random playback or dependency is needed for
-these ten synthetic effects. All stay under a 1.5-second total-duration limit, including the existing
+these synthetic effects. All stay under a 1.5-second total-duration limit, including the existing
 250 ms silence before and after the sound. Short pops are intentionally not
 stretched to fill a second. The existing Drink water speech is unchanged.
 
@@ -94,6 +91,33 @@ PCM use the same helper. Tests cover frequency bounds, monotonic direction,
 the unchanged ascending formula, action routing, total duration and sample
 ceiling/fade endpoints. A zero-length sweep or an index at or beyond the end
 returns the ending frequency, preserving the upstream helper contract.
+
+### Clean self-test-frequency tones
+
+The sleepy sigh, boing, gentle down-step, and CC0 single-bark actions have
+been removed. Their IDs (`speaker.sigh`, `speaker.boing`, `speaker.downstep`,
+`speaker.bark`) now return `action_not_found` over the PC protocol
+(`ESP_ERR_NOT_FOUND` from the C action runner); they are not aliases for the new sounds.
+These replacements keep the speaker action count at 17.
+
+| Action | Audible duration | Total with silence | Recipe |
+| --- | --- | --- | --- |
+| `speaker.tone_low` | 300 ms | 800 ms | Warm, steady 440 Hz sine tone |
+| `speaker.tone_mid` | 300 ms | 800 ms | Clear, steady 660 Hz sine tone |
+| `speaker.tone_high` | 300 ms | 800 ms | Bright, steady 880 Hz sine tone |
+| `speaker.tone_rise` | 600 ms | 1220 ms | 440 -> 660 -> 880 Hz; 200 ms each, 60 ms between notes |
+
+The three individual notes share frequency and duration constants with the
+hardware self-test. The rising sequence uses those same notes but shorter
+holds and gaps to keep it concise. There are no pitch sweeps or animal samples
+in these replacements. All use the existing sine generator, 25 ms fade-in/out,
+250 ms outer silences, and 20% digital amplitude ceiling. The self-test's
+300 ms notes and 250 ms gaps are unchanged, as is `speaker.dog_bark`.
+
+Desktop previews offer the same pitches and note/gap durations with 25 ms
+edge fades; Web Audio uses its existing conservative preview gain and does not
+calibrate the physical speaker's volume. No new sound plays automatically in
+idle mode.
 
 ### Research and design rationale (2026-09-16)
 
@@ -115,14 +139,13 @@ Per-note gain is relative to the already limited waveform and cannot amplify
 it: values above 100 are clamped. Existing sounds retain 100% relative gain;
 the second sonar ping uses 40%. Host tests cover attenuation and clamp behavior.
 
-## Dog bark recording and provenance
+## Retired CC0 bark source and provenance
 
-`speaker.bark` plays `components/tokki_speaker/audio/dog_bark_cc0.wav`: a 0.5-second
-excerpt containing one bark, through the same scaled WAV player as speech.
-The existing 250 ms lead-in/trailing silence makes the action about 1 second.
-This is a real field recording with some outdoor background, not a synthetic
-animal voice. Firmware applies the existing 20% gain once; the WAV is not
-pre-scaled. This branch includes the bark following the clarified team request.
+The removed `speaker.bark` action used
+`components/tokki_speaker/audio/dog_bark_cc0.wav`, a 0.5-second excerpt of one
+bark with outdoor background. The source WAV, conversion script, and provenance
+remain in the repository for traceability only. They are no longer embedded,
+referenced by the player, or required by the current host suite.
 
 - Work: [Dog barking mono](https://opengameart.org/content/dog-barking-mono).
 - Author: Brandon Morris; uploaded by HaelDB on 2011-03-27.
@@ -140,9 +163,9 @@ pre-scaled. This branch includes the bark following the clarified team request.
 - Initial conversion used FFmpeg from `@ffmpeg-installer/win32-x64@4.1.0` in a
 	temporary directory, not a project dependency.
 
-Host tests verify RIFF/PCM format, exactly 8000 samples (0.5 seconds),
-non-silence and the scaled amplitude ceiling. Initial scaled peak: 2911/32768.
-Hardware gain, perceived loudness and recognizability still need a lab check.
+The former host check verified RIFF/PCM format, exactly 8000 samples (0.5
+seconds), non-silence and the scaled amplitude ceiling. Initial scaled peak:
+2911/32768.
 
 ## Lab handoff
 
@@ -154,8 +177,10 @@ idf.py -C self_test -B self_test/build build
 ```
 
 Invoke the new `speaker.*` IDs serially through the team's integration or
-`tokki_action_run(id)`. Start with `speaker.bark`; compare chirp/chime/ping with
-the previous firmware, then check each new effect and the softer sonar echo.
+`tokki_action_run(id)`. Start with `speaker.tone_low`, `speaker.tone_mid`,
+`speaker.tone_high`, then `speaker.tone_rise`; compare the pitches with the
+self-test. Compare chirp/chime/ping and the double-bark recording with the
+previous firmware, then check the remaining effects and softer sonar echo.
 Repeat playback to verify I2S channel cleanup. Stop if the speaker distorts or
 gets warm. Host tests do not compile or validate the ESP-IDF I2S driver; no
 physical test of this follow-up has been performed here.

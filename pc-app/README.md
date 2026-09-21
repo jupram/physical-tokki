@@ -31,6 +31,46 @@ gestures. It never substitutes sample data or reports fake success. The existing
 sidebar/device/catalog layout uses the Clawpilot light/dark palette; the OS theme
 is detected at startup, with `?scoutTheme=light` or `?scoutTheme=dark` overrides.
 
+## Tokki's desk
+
+The home screen introduces Tokki with a gently animated pet illustration and
+shortcuts to gestures, bundles, and manually tested event ideas. The illustration
+is decorative, not a live view of the physical OLED. Reduced-motion preferences
+disable decorative and preview animation.
+
+The **Pet control desk** button stays in the top-right header on every screen
+and opens Device settings. Its pet icon and status dot are **green only when
+the native connection status is `connected`** (handshake and catalog discovery
+complete). They are **red otherwise**, including disconnected, connecting,
+loading, failed, and browser-only states. Text and an accessible status
+announcement explain the state without relying on color alone.
+
+Local previews remain usable without hardware. A connected preview still sends
+the same gesture to the physical pet; this redesign does not change serial
+commands, queuing, connection readiness, or completion reporting. Event triggers
+remain manual; the UI does not claim that a scheduler is running.
+
+The OLED picker and bundle palette offer **23 OLED gestures**, including
+**Sleeping eyes (Zzz)** (`oled.sleeping`, 48 frames × 90 ms = 4.32 seconds),
+**Night sky** (`oled.night_sky`, 4.32 seconds), and **Sunrise**
+(`oled.sunrise`, 5.76 seconds). The sleeping preview gently closes into
+low, happy-style crescent lids, breathes with a subtle bob, and floats three
+monochrome Z letters above the right eye before reopening. Like the other eye
+previews, its eye shapes are an approximation, not an exact firmware pixel copy.
+It starts open, closes by frame 8, holds through frame 39, and reopens by frames
+46–47. Stopping a local preview freezes it; replay starts again at frame zero.
+Sleep and sky previews respect reduced motion by showing a representative still.
+
+The sky scenes' monochrome
+pixel previews follow the firmware's twinkling stars/moon/shooting star and
+eased sun/rays/horizon geometry. Animated sleep and sky previews return to open
+eyes when finished. Firmware's default idle shuffle has **9 choices**, including
+one paired **sleeping eyes → night sky** sequence. Night sky only follows the
+sleeping eyes, with no intervening pause or reopen. Each portion lasts
+**48 frames × 60 ms = 2.88 seconds**; open eyes return after the sky.
+The **600–1200 ms** rest holds occur between choices, not within the pair.
+Manual previews/gestures are unchanged. Sunrise remains manual.
+
 ## Manual hardware verification
 
 1. Use a pet already running the `TOKKI/1` firmware (hello currently reports
@@ -41,11 +81,15 @@ is detected at startup, with `?scoutTheme=light` or `?scoutTheme=dark` overrides
    **Connect**. Enumeration does not open ports. The app never scans by opening
    every port and never auto-connects after a failure.
 4. Verify real firmware/board metadata and the discovered action count. The
-  current firmware has 42 descriptors; the UI does not assume that number.
+   current firmware has 47 action descriptors; the UI does not assume that number.
    Connect sends hello, waits for `ready: true`, then fetches **every catalog
    page**. **Gestures → Refresh catalog** repeats discovery from cursor zero.
    `ready` covers board/LED/RGB startup only, not verified OLED or speaker health.
    OLED/speaker initialize lazily; their failures arrive as `action.failed`.
+   After flashing the updated sound catalog, reconnect or refresh discovery:
+   `speaker.tone_low`, `speaker.tone_mid`, `speaker.tone_high`, and
+   `speaker.tone_rise` replace the removed sigh, boing, down-step, and CC0
+   single-bark actions. Update saved bundles that reference the retired IDs.
 5. On **Gestures**, search by name, device, or ID and click **Send**, or use a
    local preview. A preview always animates in the PC app and also dispatches
    the same action to the pet while connected. Observe
@@ -55,7 +99,13 @@ is detected at startup, with `?scoutTheme=light` or `?scoutTheme=dark` overrides
    one device remain ordered. Send several gestures to check the four waiting
    slots plus one active action per device. Driver failures must appear as
    **failed** with the firmware error.
-6. Once the queue drains, confirm the pet resumes its autonomous idle behavior.
+6. Once each device's queue drains, confirm it resumes idle: shuffled eye
+   animations/sequences (9 choices, including lovey-dovey, shy, and sleeping
+   eyes immediately followed by night sky; 2.88 seconds per portion of the
+   pair, with 600–1200 ms rest holds between choices), and
+   occasional teal breathing with 6-14-second dark pauses. Send OLED and
+   NeoPixel actions during idle to verify each takes priority without stopping
+   the other device's idle animation.
    There is intentionally **no Stop button**: these gestures are finite and
    noncancellable. Disconnecting or closing the app does **not** cancel work
    already accepted by firmware.
@@ -165,6 +215,9 @@ meeting precedence, and bounded ASCII marquee normalization. The scripted link
 exists **only in tests**.
 Frontend tests cover the native-only guard, command routing, dynamic IDs, error
 propagation without retries, queue counts, and unchanged backend snapshots.
+Focused OLED tests cover the local catalog, sleeping-eye poses and Z geometry,
+accessible preview output, and shared sleep/sky timing, stop/replay cleanup,
+and reduced-motion changes.
 These do not replace the physical checks above; USB line transients, real driver
 behavior, motor/display/audio effects, and installers require hardware/manual
 validation. No automatic hardware test or flashing occurs.

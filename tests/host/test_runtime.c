@@ -18,6 +18,9 @@ static size_t output_count;
 static unsigned draw_calls;
 static unsigned delay_calls;
 static esp_err_t draw_result;
+static esp_err_t color_result;
+static unsigned color_calls;
+static uint8_t last_color[3];
 static uint8_t last_frame[TOKKI_OLED_FRAME_SIZE];
 
 const char *esp_err_to_name(esp_err_t result)
@@ -49,10 +52,11 @@ esp_err_t tokki_led_blink(uint32_t count, uint32_t on_ms, uint32_t off_ms)
 
 esp_err_t tokki_neopixel_set_color(uint8_t red, uint8_t green, uint8_t blue)
 {
-    (void) red;
-    (void) green;
-    (void) blue;
-    return ESP_OK;
+    last_color[0] = red;
+    last_color[1] = green;
+    last_color[2] = blue;
+    ++color_calls;
+    return color_result;
 }
 
 esp_err_t tokki_speaker_play(tokki_speaker_sound_t sound)
@@ -171,6 +175,10 @@ static void test_catalog(void)
     tokki_protocol_t protocol;
     init(&protocol, true);
     size_t discovered = 0;
+    unsigned affectionate_eyes = 0;
+    unsigned reference_tones = 0;
+    unsigned sky_scenes = 0;
+    unsigned sleeping_eyes = 0;
     do {
         char request[160];
         snprintf(request, sizeof(request),
@@ -189,6 +197,22 @@ static void test_catalog(void)
             assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "id")->valuestring, expected->id) == 0);
             assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "name")->valuestring, expected->display_name) == 0);
             assert(cJSON_IsFalse(cJSON_GetObjectItemCaseSensitive(action, "cancellable")));
+            if (strcmp(expected->id, "oled.lovey_dovey") == 0 || strcmp(expected->id, "oled.shy") == 0) {
+                assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "oled") == 0);
+                ++affectionate_eyes;
+            }
+            if (strncmp(expected->id, "speaker.tone_", 13) == 0) {
+                assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "speaker") == 0);
+                ++reference_tones;
+            }
+            if (strcmp(expected->id, "oled.night_sky") == 0 || strcmp(expected->id, "oled.sunrise") == 0) {
+                assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "oled") == 0);
+                ++sky_scenes;
+            }
+            if (strcmp(expected->id, "oled.sleeping") == 0) {
+                assert(strcmp(cJSON_GetObjectItemCaseSensitive(action, "device")->valuestring, "oled") == 0);
+                ++sleeping_eyes;
+            }
         }
         assert((size_t) cJSON_GetObjectItemCaseSensitive(result, "total")->valueint == tokki_action_count());
         cJSON *next = cJSON_GetObjectItemCaseSensitive(result, "nextCursor");
@@ -196,6 +220,10 @@ static void test_catalog(void)
         cJSON_Delete(value);
     } while (discovered < tokki_action_count());
     assert(discovered == tokki_action_count());
+    assert(affectionate_eyes == 2);
+    assert(reference_tones == 4);
+    assert(sky_scenes == 2);
+    assert(sleeping_eyes == 1);
     assert(output_count == (discovered + TOKKI_CATALOG_PAGE_SIZE - 1) / TOKKI_CATALOG_PAGE_SIZE);
 
     char beyond_catalog[32];
@@ -288,29 +316,126 @@ static void test_queue_and_lifecycle(void)
     assert(protocol.count == 0);
 }
 
+static void expect_idle_frame(tokki_idle_t *idle, pet_eye_expression_t expression, unsigned frame)
+{
+    uint8_t expected[TOKKI_OLED_FRAME_SIZE];
+    pet_eyes_render(expected, sizeof(expected), TOKKI_OLED_WIDTH, TOKKI_OLED_HEIGHT, expression, frame);
+    unsigned before = draw_calls;
+    assert(tokki_idle_step(idle) == ESP_OK);
+    assert(draw_calls == before + 1 && delay_calls == 0);
+    assert(memcmp(expected, last_frame, sizeof(expected)) == 0);
+}
+
 static void test_idle(void)
 {
+    const pet_eye_expression_t expressions[] = {
+        PET_EYES_HAPPY, PET_EYES_LOOK_LEFT, PET_EYES_LOOK_RIGHT, PET_EYES_LOOK_UP,
+        PET_EYES_HAPPY, PET_EYES_CURIOUS, PET_EYES_LOVEY_DOVEY, PET_EYES_SHY,
+        PET_EYES_SLEEPING,
+    };
+    const unsigned frames[] = {9, 24, 24, 24, 48, 48, 48, 48, 96};
+    assert(TOKKI_IDLE_EYE_VARIANTS == 9);
+    unsigned first_choices = 0;
+    unsigned minimum_rest = 20;
+    unsigned maximum_rest = 10;
     tokki_idle_t idle;
-    tokki_idle_reset(&idle);
     draw_result = ESP_OK;
-    uint8_t centered[TOKKI_OLED_FRAME_SIZE];
-    pet_eyes_render(centered, sizeof(centered), TOKKI_OLED_WIDTH, TOKKI_OLED_HEIGHT, PET_EYES_HAPPY, 0);
-    for (unsigned index = 0; index < 297; ++index) {
-        unsigned before = draw_calls;
-        assert(tokki_idle_step(&idle) == ESP_OK);
-        assert(draw_calls == before + 1);
-        assert(delay_calls == 0);
-        if (index == 0) {
-            assert(memcmp(centered, last_frame, sizeof(centered)) == 0);
-        }
-        if (index == 100 || index == 175) {
-            assert(memcmp(centered, last_frame, sizeof(centered)) != 0);
+    for (uint32_t seed = 0; seed < 8; ++seed) {
+        tokki_idle_reset(&idle, seed);
+        unsigned previous = TOKKI_IDLE_EYE_VARIANTS;
+        for (unsigned round = 0; round < 2; ++round) {
+            unsigned seen = 0;
+            unsigned glance_blinks = 0;
+            for (unsigned choice = 0; choice < TOKKI_IDLE_EYE_VARIANTS; ++choice) {
+                assert(idle.resting && idle.frame == 0);
+                unsigned rest = idle.frames;
+                assert(rest * TOKKI_IDLE_FRAME_MS >= 600 && rest * TOKKI_IDLE_FRAME_MS <= 1200);
+                if (rest < minimum_rest) minimum_rest = rest;
+                if (rest > maximum_rest) maximum_rest = rest;
+                for (unsigned frame = 0; frame < rest; ++frame) {
+                    expect_idle_frame(&idle, PET_EYES_HAPPY, 0);
+                }
+                assert(!idle.resting && idle.frame == 0);
+                unsigned phase = idle.phase;
+                assert(phase < TOKKI_IDLE_EYE_VARIANTS && phase != previous);
+                assert((seen & (1U << phase)) == 0);
+                bool side_glance = expressions[phase] == PET_EYES_LOOK_LEFT ||
+                                   expressions[phase] == PET_EYES_LOOK_RIGHT;
+                assert(idle.frames == frames[phase] + (side_glance ? 9 : 0));
+                if (round == 0 && choice == 0) first_choices |= 1U << phase;
+                seen |= 1U << phase;
+                previous = phase;
+                unsigned sequence_next_phase = idle.next_phase;
+                uint32_t sequence_random_state = idle.random_state;
+                for (unsigned frame = 0; frame < frames[phase]; ++frame) {
+                    bool restore = frame + 1 == frames[phase];
+                    if (phase == 8) {
+                        assert(!idle.resting && idle.phase == 8 && idle.frame == frame);
+                        assert(idle.next_phase == sequence_next_phase &&
+                               idle.random_state == sequence_random_state);
+                        tokki_idle_t snapshot;
+                        memcpy(&snapshot, &idle, sizeof(idle));
+                        draw_result = ESP_FAIL;
+                        assert(tokki_idle_step(&idle) == ESP_FAIL);
+                        assert(memcmp(&snapshot, &idle, sizeof(idle)) == 0);
+                        draw_result = ESP_OK;
+                    }
+                    if (phase == 8 && frame >= 48 && !restore) {
+                        uint8_t expected[TOKKI_OLED_FRAME_SIZE];
+                        assert(tokki_oled_render_art(expected, sizeof(expected),
+                                                      TOKKI_OLED_ART_NIGHT_SKY, frame - 48) == ESP_OK);
+                        unsigned before = draw_calls;
+                        assert(tokki_idle_step(&idle) == ESP_OK);
+                        assert(draw_calls == before + 1 && delay_calls == 0);
+                        assert(memcmp(expected, last_frame, sizeof(expected)) == 0);
+                    } else {
+                        unsigned eye_frame = phase == 8 && frame > 39 ? 39 :
+                                             (phase == 0 ? 34 : 0) + frame;
+                        expect_idle_frame(&idle, restore ? PET_EYES_HAPPY : expressions[phase],
+                                          restore ? 0 : eye_frame);
+                    }
+                }
+                if (side_glance) {
+                    assert(!idle.resting && idle.frame == 24);
+                    unsigned next_phase = idle.next_phase;
+                    uint32_t random_state = idle.random_state;
+                    for (unsigned frame = 0; frame < 9; ++frame) {
+                        assert(!idle.resting && idle.phase == phase);
+                        assert(idle.next_phase == next_phase && idle.random_state == random_state);
+                        if (frame == 4) {
+                            tokki_idle_t snapshot;
+                            memcpy(&snapshot, &idle, sizeof(idle));
+                            draw_result = ESP_FAIL;
+                            assert(tokki_idle_step(&idle) == ESP_FAIL);
+                            assert(memcmp(&snapshot, &idle, sizeof(idle)) == 0);
+                            draw_result = ESP_OK;
+                        }
+                        expect_idle_frame(&idle, PET_EYES_HAPPY, 34 + frame);
+                    }
+                    ++glance_blinks;
+                }
+                assert(idle.resting && idle.frame == 0);
+            }
+            assert(seen == (1U << TOKKI_IDLE_EYE_VARIANTS) - 1 && glance_blinks == 2);
         }
     }
-    assert(idle.phase == 0 && idle.frame == 0);
+    assert((first_choices & (first_choices - 1)) != 0);
+    assert(minimum_rest == 10 && maximum_rest == 20);
+
+    tokki_idle_reset(&idle, 123);
+    tokki_idle_t same;
+    tokki_idle_reset(&same, 123);
+    unsigned rest = idle.frames;
+    for (unsigned frame = 0; frame < rest; ++frame) {
+        assert(tokki_idle_step(&idle) == ESP_OK);
+        assert(tokki_idle_step(&same) == ESP_OK);
+    }
+    assert(idle.phase == same.phase && idle.random_state == same.random_state);
+    tokki_idle_t snapshot;
+    memcpy(&snapshot, &idle, sizeof(idle));
     draw_result = ESP_FAIL;
     assert(tokki_idle_step(&idle) == ESP_FAIL);
-    assert(idle.phase == 0 && idle.frame == 0);
+    assert(memcmp(&idle, &snapshot, sizeof(idle)) == 0);
     tokki_protocol_t protocol;
     init(&protocol, true);
     tokki_protocol_idle_error(&protocol, ESP_FAIL);
@@ -320,10 +445,56 @@ static void test_idle(void)
     tokki_job_t job;
     assert(tokki_protocol_start_next_for_device(&protocol, TOKKI_DEVICE_LED, &job));
     assert(tokki_action_run(job.action_id) == ESP_OK);
-    tokki_idle_reset(&idle);
+    tokki_idle_reset(&idle, 456);
     draw_result = ESP_OK;
-    assert(tokki_idle_step(&idle) == ESP_OK);
-    assert(memcmp(centered, last_frame, sizeof(centered)) == 0);
+    expect_idle_frame(&idle, PET_EYES_HAPPY, 0);
+}
+
+static void test_idle_neopixel(void)
+{
+    tokki_idle_neopixel_t idle;
+    tokki_idle_neopixel_reset(&idle, 0);
+    color_result = ESP_OK;
+    unsigned previous_pause = 0;
+    bool varied = false;
+    for (unsigned burst = 0; burst < 32; ++burst) {
+        assert(idle.resting);
+        unsigned before = color_calls;
+        assert(tokki_idle_neopixel_step(&idle) == ESP_OK);
+        assert(color_calls == before + 1 && delay_calls == 0);
+        assert(last_color[0] == 0 && last_color[1] == 0 && last_color[2] == 0);
+        assert(idle.delay_ms >= 6000 && idle.delay_ms <= 14000);
+        if (previous_pause != 0 && previous_pause != idle.delay_ms) varied = true;
+        previous_pause = idle.delay_ms;
+        assert(!idle.resting && idle.frame == 0);
+        unsigned duration = 0;
+        for (unsigned frame = 0; frame < 33; ++frame) {
+            tokki_idle_neopixel_t snapshot;
+            memcpy(&snapshot, &idle, sizeof(idle));
+            color_result = ESP_FAIL;
+            assert(tokki_idle_neopixel_step(&idle) == ESP_FAIL);
+            assert(memcmp(&idle, &snapshot, sizeof(idle)) == 0);
+            color_result = ESP_OK;
+            before = color_calls;
+            assert(tokki_idle_neopixel_step(&idle) == ESP_OK);
+            assert(color_calls == before + 1 && delay_calls == 0);
+            unsigned brightness = 2 * (frame <= 16 ? frame : 32 - frame);
+            assert(last_color[0] == 0 && last_color[1] == brightness && last_color[2] == brightness);
+            assert(idle.delay_ms == 60);
+            duration += idle.delay_ms;
+        }
+        assert(duration == 1980 && idle.resting);
+    }
+    assert(varied);
+    tokki_idle_neopixel_reset(&idle, 42);
+    tokki_idle_neopixel_t snapshot;
+    memcpy(&snapshot, &idle, sizeof(idle));
+    color_result = ESP_FAIL;
+    assert(tokki_idle_neopixel_step(&idle) == ESP_FAIL);
+    assert(memcmp(&idle, &snapshot, sizeof(idle)) == 0);
+    color_result = ESP_OK;
+    assert(tokki_idle_neopixel_step(&idle) == ESP_OK);
+    assert(last_color[0] == 0 && last_color[1] == 0 && last_color[2] == 0);
 }
 
 static void export_wire_fixture(void)
@@ -362,6 +533,7 @@ int main(int argc, char **argv)
     test_catalog();
     test_queue_and_lifecycle();
     test_idle();
-    puts("PASS: serial framing, bounded JSON, catalog pagination, per-device FIFO/backpressure, lifecycle and idle frames");
+    test_idle_neopixel();
+    puts("PASS: serial framing, catalog, per-device FIFO/lifecycle, shuffled idle eyes, intermittent teal breathing");
     return 0;
 }

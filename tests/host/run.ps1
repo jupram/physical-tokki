@@ -71,6 +71,18 @@ try {
     & .\tokki-startup.exe
     if ($LASTEXITCODE -ne 0) { throw 'Startup failure indicator tests failed.' }
     if ($Runtime) {
+        $workerSources = @(
+            "$PSScriptRoot\test_workers.c"
+            "$repo\components\tokki_runtime\tokki_runtime.c"
+            "$repo\components\tokki_runtime\tokki_idle.c"
+            "$repo\components\tokki_neopixel\neopixel_effects.c"
+            "$repo\components\tokki_oled\pet_eyes.c"
+            "$repo\components\tokki_oled\oled_art.c"
+        )
+        & cl.exe /nologo /TC /std:c11 /W4 /WX @includes $runtimeInclude @workerSources /Fetokki-workers.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Worker host test compilation failed.' }
+        & .\tokki-workers.exe
+        if ($LASTEXITCODE -ne 0) { throw 'Worker idle/preemption tests failed.' }
         $cjson = Join-Path $repo 'managed_components\espressif__cjson\cJSON'
         if (-not (Test-Path (Join-Path $cjson 'cJSON.c'))) {
             throw 'Build production firmware once with ESP-IDF to restore the managed cJSON dependency, then rerun -Runtime.'
@@ -146,4 +158,3 @@ try {
 
 Test-SpeakerWav "$repo/components/tokki_speaker/audio/drink_water.wav"
 Test-SpeakerWav "$repo/components/tokki_speaker/audio/dog_bark.wav" -expectedSamples 8318
-Test-SpeakerWav "$repo/components/tokki_speaker/audio/dog_bark_cc0.wav" -expectedSamples 8000

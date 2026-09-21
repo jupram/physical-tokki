@@ -80,6 +80,21 @@ static esp_err_t run_sleepy(void)
     return animate_eyes(PET_EYES_SLEEPY, 0, 24);
 }
 
+static esp_err_t run_lovey_dovey(void)
+{
+    return animate_eyes(PET_EYES_LOVEY_DOVEY, 0, 48);
+}
+
+static esp_err_t run_shy(void)
+{
+    return animate_eyes(PET_EYES_SHY, 0, 48);
+}
+
+static esp_err_t run_sleeping(void)
+{
+    return animate_eyes(PET_EYES_SLEEPING, 0, 48);
+}
+
 static esp_err_t animate_art(tokki_oled_art_t art, unsigned frame_count, unsigned frame_ms)
 {
     uint8_t framebuffer[TOKKI_OLED_FRAME_SIZE];
@@ -135,6 +150,16 @@ static esp_err_t run_heart(void)
 static esp_err_t run_exclamation(void)
 {
     return animate_art(TOKKI_OLED_ART_EXCLAMATION, 17, OLED_GESTURE_FRAME_MS);
+}
+
+static esp_err_t run_night_sky(void)
+{
+    return animate_art(TOKKI_OLED_ART_NIGHT_SKY, 48, OLED_GESTURE_FRAME_MS);
+}
+
+static esp_err_t run_sunrise(void)
+{
+    return animate_art(TOKKI_OLED_ART_SUNRISE, 64, OLED_GESTURE_FRAME_MS);
 }
 
 const tokki_action_descriptor_t TOKKI_OLED_HAPPY_ACTION = {
@@ -212,4 +237,25 @@ const tokki_action_descriptor_t TOKKI_OLED_HEART_ACTION = {
 const tokki_action_descriptor_t TOKKI_OLED_EXCLAMATION_ACTION = {
     .id = "oled.exclamation", .display_name = "Exclamation mark",
     .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_exclamation,
+};
+
+const tokki_action_descriptor_t TOKKI_OLED_LOVEY_DOVEY_ACTION = {
+    .id = "oled.lovey_dovey", .display_name = "Lovey-dovey eyes",
+    .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_lovey_dovey,
+};
+const tokki_action_descriptor_t TOKKI_OLED_SHY_ACTION = {
+    .id = "oled.shy", .display_name = "Shy eyes",
+    .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_shy,
+};
+const tokki_action_descriptor_t TOKKI_OLED_SLEEPING_ACTION = {
+    .id = "oled.sleeping", .display_name = "Sleeping eyes (Zzz)",
+    .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_sleeping,
+};
+const tokki_action_descriptor_t TOKKI_OLED_NIGHT_SKY_ACTION = {
+    .id = "oled.night_sky", .display_name = "Night sky",
+    .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_night_sky,
+};
+const tokki_action_descriptor_t TOKKI_OLED_SUNRISE_ACTION = {
+    .id = "oled.sunrise", .display_name = "Sunrise",
+    .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_sunrise,
 };

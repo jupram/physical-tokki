@@ -14,6 +14,9 @@ typedef enum {
     PET_EYES_LOOK_UP,
     PET_EYES_LOOK_DOWN,
     PET_EYES_SLEEPY,
+    PET_EYES_LOVEY_DOVEY,
+    PET_EYES_SHY,
+    PET_EYES_SLEEPING,
 } pet_eye_expression_t;
 
 void pet_eyes_render(uint8_t *framebuffer,
