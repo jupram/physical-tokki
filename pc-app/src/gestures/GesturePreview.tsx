@@ -26,6 +26,8 @@ const ART_GLYPH: Record<string, string> = {
   thinking: "•••",
   heart: "♥",
   exclamation: "!",
+  night_sky: "🌌",
+  sunrise: "🌅",
 };
 
 function OledView({ sim, active }: { sim?: OledSim; active: boolean }) {
@@ -37,6 +39,18 @@ function OledView({ sim, active }: { sim?: OledSim; active: boolean }) {
         <span className="pv-eye" />
         <span className="pv-eye" />
       </div>
+    );
+  }
+  if (sim.kind === "marquee") {
+    const width = sim.text.length * 12 - 2;
+    const durationMs = Math.ceil((128 + width) / 2) * 45;
+    return (
+      <span
+        className="pv-marquee"
+        style={{ "--marquee-duration": `${durationMs}ms` } as React.CSSProperties}
+      >
+        {sim.text}
+      </span>
     );
   }
   if (sim.art === "night_sky" || sim.art === "sunrise") {

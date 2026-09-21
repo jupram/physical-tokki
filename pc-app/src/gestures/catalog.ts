@@ -34,14 +34,30 @@ export type OledArt =
 
 export type OledSim =
   | { kind: "eyes"; eyes: OledEyes }
-  | { kind: "art"; art: OledArt };
+  | { kind: "art"; art: OledArt }
+  | { kind: "marquee"; text: string };
 
 export type LedEffect = "solid" | "blink" | "breathe" | "rainbow";
 export type LedSim = { effect: LedEffect; color: string };
 
 export type SpeakerSound =
-  | "drink_water" | "chirp" | "alert" | "chime" | "ping"
-  | "tone_low" | "tone_mid" | "tone_high" | "tone_rise";
+  | "drink_water"
+  | "chirp"
+  | "alert"
+  | "chime"
+  | "ping"
+  | "tone_low"
+  | "tone_mid"
+  | "tone_high"
+  | "tone_rise"
+  | "dog_bark"
+  | "bubble"
+  | "whistle"
+  | "question"
+  | "sparkle"
+  | "trill"
+  | "knock"
+  | "sonar";
 export type SpeakerSim = { sound: SpeakerSound };
 
 export type GestureSim = { oled?: OledSim; led?: LedSim; speaker?: SpeakerSim };
@@ -141,6 +157,14 @@ export const CATALOG: GestureDef[] = [
   speaker("speaker.tone_mid", "Clear tone (660 Hz)", "tone_mid", 800),
   speaker("speaker.tone_high", "Bright tone (880 Hz)", "tone_high", 800),
   speaker("speaker.tone_rise", "Rising tones (440/660/880 Hz)", "tone_rise", 1220),
+  speaker("speaker.dog_bark", "Dog bark (recording, twice)", "dog_bark", 1020),
+  speaker("speaker.bubble", "Bubble pop (synthesized)", "bubble", 590),
+  speaker("speaker.whistle", "Rising whistle (synthesized)", "whistle", 780),
+  speaker("speaker.question", "Question cue (synthesized)", "question", 820),
+  speaker("speaker.sparkle", "Sparkle (synthesized)", "sparkle", 830),
+  speaker("speaker.trill", "Trill (synthesized)", "trill", 760),
+  speaker("speaker.knock", "Knock-knock (synthesized)", "knock", 730),
+  speaker("speaker.sonar", "Sonar echo (synthesized)", "sonar", 850),
 ];
 
 export const CATALOG_BY_ID: Record<string, GestureDef> = Object.fromEntries(

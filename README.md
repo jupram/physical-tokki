@@ -22,7 +22,7 @@ pc-app/                       Tauri desktop app for discovery/manual playback
 docs/                         Architecture documentation
 ```
 
-See [the architecture](docs/architecture.md), [gesture contribution guide](components/tokki_gestures/README.md), and [serial protocol](protocol/tokki-serial-v1.md).
+See [the architecture](docs/architecture.md), [gesture contribution guide](components/tokki_gestures/README.md), [serial protocol](protocol/tokki-serial-v1.md), and [Windows notification setup](docs/windows-notification-setup.md).
 
 ## Production firmware
 
@@ -87,11 +87,19 @@ idf.py flash monitor
 7. Let the queue finish or disconnect the app: the pet returns to idle eyes
    and intermittent teal breathing.
    Disconnect does not cancel gestures already accepted by the firmware.
+8. For Teams and Outlook notifications, install the signed Windows MSIX and
+  follow the [notification relay setup](docs/windows-notification-setup.md).
+  Each matching notification runs one OLED marquee and speaker cue while the
+  NeoPixel stays purple for Teams, blue for Outlook mail, or yellow for an
+  Outlook meeting/reminder. The NeoPixel turns off with the marquee. The Events
+  screen shows the five-item waiting queue and can simulate each route locally.
 
 Serial uses 115200 baud, 8N1, with no flow control. Discovery means reading
 gesture descriptors from the selected pet, not probing every COM device.
-No event-to-gesture rules, email integration, arbitrary text, cancellation,
-Wi-Fi, or Bluetooth are implemented in this prototype.
+Freeform event rules are preview-only. The packaged Windows app implements the
+fixed Teams/Outlook notification relay described above. General email providers,
+arbitrary event automation, cancellation, Wi-Fi, and Bluetooth are not
+implemented in this prototype.
 
 The catalog describes firmware capabilities, not verified peripheral
 presence. A missing OLED produces a visible idle/gesture error and retries

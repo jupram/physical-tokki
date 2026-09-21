@@ -9,6 +9,7 @@
 
 #define PREFIX "TOKKI/1 "
 #define PREFIX_LENGTH (sizeof(PREFIX) - 1)
+#define MARQUEE_ACTION_ID "oled.marquee"
 
 static bool add_string(cJSON *object, const char *key, const char *value)
 {
@@ -168,6 +169,107 @@ static void run_action(tokki_protocol_t *protocol, const char *id, const cJSON *
     tokki_job_t *job = &protocol->queue[(protocol->head + protocol->count) % TOKKI_QUEUE_CAPACITY];
     memcpy(job->request_id, id, strlen(id) + 1);
     memcpy(job->action_id, action_id->valuestring, strlen(action_id->valuestring) + 1);
+    job->text[0] = '\0';
+    ++protocol->count;
+    emit_json(protocol, object, id);
+}
+
+static bool valid_marquee_text(const cJSON *value)
+{
+    if (!cJSON_IsString(value)) {
+        return false;
+    }
+    size_t length = strlen(value->valuestring);
+    if (length == 0 || length > TOKKI_MARQUEE_TEXT_MAX) {
+        return false;
+    }
+    for (size_t index = 0; index < length; ++index) {
+        unsigned char character = (unsigned char) value->valuestring[index];
+        if (character < 0x20 || character > 0x7E) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static void run_marquee(tokki_protocol_t *protocol, const char *id, const cJSON *params)
+{
+    const cJSON *text = cJSON_GetObjectItemCaseSensitive(params, "text");
+    if (!valid_marquee_text(text) || cJSON_GetArraySize(params) != 1) {
+        error_response(protocol, id, "invalid_params",
+                       "text must be 1 to 40 printable ASCII characters");
+        return;
+    }
+    if (!protocol->ready) {
+        error_response(protocol, id, "internal_error", "Board initialization failed; see device logs");
+        return;
+    }
+    if (protocol->count == TOKKI_QUEUE_CAPACITY) {
+        error_response(protocol, id, "device_busy", "Action queue is full");
+        return;
+    }
+    cJSON *object = response(id, true);
+    cJSON *result = cJSON_AddObjectToObject(object, "result");
+    if (result == NULL || cJSON_AddBoolToObject(result, "accepted", true) == NULL) {
+        cJSON_Delete(object);
+        error_response(protocol, id, "internal_error", "Cannot allocate acceptance response");
+        return;
+    }
+    tokki_job_t *job = &protocol->queue[(protocol->head + protocol->count) % TOKKI_QUEUE_CAPACITY];
+    memcpy(job->request_id, id, strlen(id) + 1);
+    memcpy(job->action_id, MARQUEE_ACTION_ID, sizeof(MARQUEE_ACTION_ID));
+    memcpy(job->text, text->valuestring, strlen(text->valuestring) + 1);
+    ++protocol->count;
+    emit_json(protocol, object, id);
+}
+
+static const char *notification_light_action(const cJSON *color)
+{
+    if (!cJSON_IsString(color)) {
+        return NULL;
+    }
+    if (strcmp(color->valuestring, "blue") == 0) {
+        return TOKKI_NOTIFICATION_LIGHT_BLUE_ACTION_ID;
+    }
+    if (strcmp(color->valuestring, "purple") == 0) {
+        return TOKKI_NOTIFICATION_LIGHT_PURPLE_ACTION_ID;
+    }
+    if (strcmp(color->valuestring, "yellow") == 0) {
+        return TOKKI_NOTIFICATION_LIGHT_YELLOW_ACTION_ID;
+    }
+    return NULL;
+}
+
+static void run_notification_light(tokki_protocol_t *protocol, const char *id,
+                                   const cJSON *params)
+{
+    const cJSON *text = cJSON_GetObjectItemCaseSensitive(params, "text");
+    const char *action_id = notification_light_action(
+        cJSON_GetObjectItemCaseSensitive(params, "color"));
+    if (!valid_marquee_text(text) || action_id == NULL || cJSON_GetArraySize(params) != 2) {
+        error_response(protocol, id, "invalid_params",
+                       "text must be printable ASCII and color must be blue, purple or yellow");
+        return;
+    }
+    if (!protocol->ready) {
+        error_response(protocol, id, "internal_error", "Board initialization failed; see device logs");
+        return;
+    }
+    if (protocol->count == TOKKI_QUEUE_CAPACITY) {
+        error_response(protocol, id, "device_busy", "Action queue is full");
+        return;
+    }
+    cJSON *object = response(id, true);
+    cJSON *result = cJSON_AddObjectToObject(object, "result");
+    if (result == NULL || cJSON_AddBoolToObject(result, "accepted", true) == NULL) {
+        cJSON_Delete(object);
+        error_response(protocol, id, "internal_error", "Cannot allocate acceptance response");
+        return;
+    }
+    tokki_job_t *job = &protocol->queue[(protocol->head + protocol->count) % TOKKI_QUEUE_CAPACITY];
+    memcpy(job->request_id, id, strlen(id) + 1);
+    memcpy(job->action_id, action_id, strlen(action_id) + 1);
+    memcpy(job->text, text->valuestring, strlen(text->valuestring) + 1);
     ++protocol->count;
     emit_json(protocol, object, id);
 }
@@ -228,6 +330,10 @@ static void process_line(tokki_protocol_t *protocol)
         list_actions(protocol, id, params);
     } else if (strcmp(method->valuestring, "action.run") == 0) {
         run_action(protocol, id, params);
+    } else if (strcmp(method->valuestring, "oled.marquee") == 0) {
+        run_marquee(protocol, id, params);
+    } else if (strcmp(method->valuestring, "neopixel.notification") == 0) {
+        run_notification_light(protocol, id, params);
     } else if (strcmp(method->valuestring, "action.stop") == 0) {
         const cJSON *run_id = cJSON_GetObjectItemCaseSensitive(params, "requestId");
         if (!valid_identifier(run_id, TOKKI_REQUEST_ID_MAX) || cJSON_GetArraySize(params) != 1) {
@@ -306,7 +412,14 @@ bool tokki_protocol_start_next_for_device(tokki_protocol_t *protocol,
         size_t index = (protocol->head + offset) % TOKKI_QUEUE_CAPACITY;
         const tokki_action_descriptor_t *action =
             tokki_action_find(protocol->queue[index].action_id);
-        if (action != NULL && action->device == device) {
+        bool marquee = strcmp(protocol->queue[index].action_id, MARQUEE_ACTION_ID) == 0;
+        bool notification_light =
+            strcmp(protocol->queue[index].action_id, TOKKI_NOTIFICATION_LIGHT_BLUE_ACTION_ID) == 0 ||
+            strcmp(protocol->queue[index].action_id, TOKKI_NOTIFICATION_LIGHT_PURPLE_ACTION_ID) == 0 ||
+            strcmp(protocol->queue[index].action_id, TOKKI_NOTIFICATION_LIGHT_YELLOW_ACTION_ID) == 0;
+        if ((marquee && device == TOKKI_DEVICE_OLED) ||
+            (notification_light && device == TOKKI_DEVICE_NEOPIXEL) ||
+            (action != NULL && action->device == device)) {
             *job = protocol->queue[index];
             break;
         }

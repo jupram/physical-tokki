@@ -9,6 +9,9 @@ no mock transport, hardcoded gesture catalog, or simulated completion.
 Windows: Node.js (a version supported by Vite 8, such as 22.12+), npm, Rust/Cargo,
 Microsoft Visual Studio C++ Build Tools, and Microsoft Edge WebView2 Runtime.
 Install your board's USB UART driver if Windows does not expose its COM port.
+For installation on another laptop, architecture matching, development
+certificate trust, firmware flashing, and notification verification, follow
+the [Windows notification setup guide](../docs/windows-notification-setup.md).
 
 From the repository root:
 
@@ -152,8 +155,19 @@ device might already have executed it. The app does **not retry action.run**.
   overlapping polls. This is a real-state read, not a gesture timer. The worker
   continues reading/processing lifecycle events while the UI is on another tab
   or inactive.
-- **Events are explicitly deferred**: no scheduler, reminders, email integration,
-  event rules, reconnect automation, or gesture cancellation is implemented.
+- The Windows notification relay reads toast notifications in the native Rust
+  process, so it continues while the app window is minimized. It ignores the
+  notification backlog present when enabled, deduplicates current notifications,
+  and holds at most five new notifications in FIFO order. Teams uses
+  `speaker.trill` with purple; Outlook mail uses `speaker.chime` with blue;
+  Outlook meeting/reminder text takes precedence and uses `speaker.whistle`
+  with yellow. Each match sends a single 40-character printable-ASCII OLED
+  marquee, its sound, and a NeoPixel light lasting for the marquee duration.
+  Other sources are ignored. The relay does not reconnect the serial port
+  automatically. The Events screen shows each waiting FIFO item with its source,
+  normalized marquee text, sound, and color. Routing cards and queued items can
+  be simulated locally without sending hardware commands or consuming the FIFO.
+- Freeform event rules remain local preview data; they are not a scheduler.
 
 The shared wire contract is in `..\protocol\tokki-serial-v1.md`.
 
@@ -168,6 +182,26 @@ cargo fmt --manifest-path .\src-tauri\Cargo.toml -- --check
 npm run tauri build -- --debug --no-bundle
 ```
 
+Reading other apps' notifications requires a packaged Windows identity and the
+`userNotificationListener` capability; `tauri dev`, MSI, and NSIS builds cannot
+grant it. Build the checked-in MSIX manifest and layout from a Windows SDK shell:
+
+```powershell
+.\src-tauri\windows\package-msix.ps1 -Publisher 'CN=Your Certificate Subject' -CertificateThumbprint 'YOUR_CERT_THUMBPRINT'
+```
+
+The signing certificate subject must exactly match `-Publisher`, and the
+certificate must be trusted on the installation machine. The script builds the
+release app, packages it under `src-tauri\target\release\bundle\msix`, and signs
+when a thumbprint is supplied. After installing the MSIX, open **Events**, choose
+**Allow access**, approve Windows' prompt, connect Tokki, and enable the relay.
+Denied access must be re-enabled in Windows Settings. The permission can be
+revoked at any time; the backend checks it on every notification poll.
+MSIX packages are architecture-specific, and a local development certificate is
+not automatically trusted on another laptop. See the
+[cross-laptop setup guide](../docs/windows-notification-setup.md) for both local
+development and production-signing paths.
+
 The debug native executable is `src-tauri\target\debug\pc-app.exe`.
 For release installers use `npm run tauri build`; installers are generated under
 `src-tauri\target\release\bundle`.
@@ -176,7 +210,9 @@ Rust tests cover framing/CRLF/boot logs, frame size and resynchronization, stric
 envelopes, request bounds, dynamic pagination, correlation, real acceptance and
 lifecycle transitions, queue rejection, driver errors, explicit timeouts,
 disconnect cleanup, stale events, bounded handshake retries, and a scripted
-duplex test link fetching all pages. The scripted link exists **only in tests**.
+duplex test link fetching all pages. They also cover notification source routing,
+meeting precedence, and bounded ASCII marquee normalization. The scripted link
+exists **only in tests**.
 Frontend tests cover the native-only guard, command routing, dynamic IDs, error
 propagation without retries, queue counts, and unchanged backend snapshots.
 Focused OLED tests cover the local catalog, sleeping-eye poses and Z geometry,
@@ -188,7 +224,7 @@ validation. No automatic hardware test or flashing occurs.
 
 `src-tauri\tests\fixtures\firmware-frames.ndjson` is an unchanged transcript from
 the compiled C protocol implementation and real firmware registry. One focused
-Rust conformance test decodes its hello, eight catalog pages/all 31 IDs,
+Rust conformance test decodes its hello, eight catalog pages/all 31 recorded IDs,
 acceptance/lifecycle events, and driver/not-found errors. Regenerate from the
 repository root with `.\tests\host\run.ps1 -WireFixturePath <output-path>` and
 review any fixture changes against the shared contract.

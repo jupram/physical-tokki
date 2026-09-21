@@ -9,12 +9,17 @@
 #define TOKKI_FRAME_MAX 1024
 #define TOKKI_REQUEST_ID_MAX 64
 #define TOKKI_ACTION_ID_MAX 96
+#define TOKKI_MARQUEE_TEXT_MAX 40
+#define TOKKI_NOTIFICATION_LIGHT_BLUE_ACTION_ID "neopixel.notification.blue"
+#define TOKKI_NOTIFICATION_LIGHT_PURPLE_ACTION_ID "neopixel.notification.purple"
+#define TOKKI_NOTIFICATION_LIGHT_YELLOW_ACTION_ID "neopixel.notification.yellow"
 #define TOKKI_QUEUE_CAPACITY 4
 #define TOKKI_CATALOG_PAGE_SIZE 4
 
 typedef struct {
     char request_id[TOKKI_REQUEST_ID_MAX + 1];
     char action_id[TOKKI_ACTION_ID_MAX + 1];
+    char text[TOKKI_MARQUEE_TEXT_MAX + 1];
 } tokki_job_t;
 
 typedef void (*tokki_protocol_emit_fn)(const char *frame, size_t length, void *context);

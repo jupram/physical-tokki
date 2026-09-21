@@ -80,8 +80,19 @@ pub enum Command {
     Disconnect,
     Refresh,
     Run(String),
+    Marquee(String),
+    NotificationLight {
+        text: String,
+        color: String,
+    },
+    Notification {
+        text: String,
+        sound: String,
+        color: String,
+    },
 }
 
+#[derive(Clone)]
 pub struct Transport {
     sender: SyncSender<Command>,
     snapshot: Arc<Mutex<Snapshot>>,
@@ -109,6 +120,22 @@ impl Transport {
             }
             Command::Run(id) if !protocol::valid_action_id(id) => {
                 return Err("Invalid gesture ID".into());
+            }
+            Command::Marquee(text) if !protocol::valid_marquee_text(text) => {
+                return Err("Marquee text must be 1 to 40 printable ASCII characters".into());
+            }
+            Command::NotificationLight { text, color }
+                if !protocol::valid_marquee_text(text)
+                    || !matches!(color.as_str(), "blue" | "purple" | "yellow") =>
+            {
+                return Err("Invalid notification light text or color".into());
+            }
+            Command::Notification { text, sound, color }
+                if !protocol::valid_marquee_text(text)
+                    || !protocol::valid_action_id(sound)
+                    || !matches!(color.as_str(), "blue" | "purple" | "yellow") =>
+            {
+                return Err("Invalid notification marquee, sound or color".into());
             }
             _ => {}
         }
@@ -390,6 +417,59 @@ impl Worker {
                     json!({"actionId":action_id}),
                     PendingKind::Run,
                 )
+            }
+            Command::Marquee(text) => {
+                if self.state.status != "connected" {
+                    self.error("Connect and finish discovery before sending a marquee".into());
+                    return;
+                }
+                let id = self.next_id();
+                self.state.activity.push(Activity {
+                    request_id: id.clone(),
+                    action_id: "oled.marquee".into(),
+                    name: "Notification marquee".into(),
+                    state: "sending".into(),
+                    message: "Awaiting firmware acceptance".into(),
+                    updated_at: now_ms(),
+                });
+                self.state.last_error = None;
+                self.publish();
+                self.send(id, "oled.marquee", json!({"text":text}), PendingKind::Run)
+            }
+            Command::NotificationLight { text, color } => {
+                if self.state.status != "connected" {
+                    self.error(
+                        "Connect and finish discovery before sending a notification light".into(),
+                    );
+                    return;
+                }
+                let id = self.next_id();
+                self.state.activity.push(Activity {
+                    request_id: id.clone(),
+                    action_id: format!("neopixel.notification.{color}"),
+                    name: "Notification light".into(),
+                    state: "sending".into(),
+                    message: "Awaiting firmware acceptance".into(),
+                    updated_at: now_ms(),
+                });
+                self.state.last_error = None;
+                self.publish();
+                self.send(
+                    id,
+                    "neopixel.notification",
+                    json!({"text":text,"color":color}),
+                    PendingKind::Run,
+                )
+            }
+            Command::Notification { text, sound, color } => {
+                self.command(Command::Marquee(text.clone()));
+                if self.state.status == "connected" {
+                    self.command(Command::Run(sound));
+                }
+                if self.state.status == "connected" {
+                    self.command(Command::NotificationLight { text, color });
+                }
+                return;
             }
         };
         if let Err(error) = result {
@@ -675,7 +755,9 @@ mod tests {
                             json!({"actions":[action("new.three")],"total":3,"nextCursor":null})
                         }
                     }
-                    "action.run" => json!({"accepted":true}),
+                    "action.run" | "oled.marquee" | "neopixel.notification" => {
+                        json!({"accepted":true})
+                    }
                     method => panic!("Unexpected method {method}"),
                 };
                 let response = format!(
@@ -873,6 +955,33 @@ mod tests {
         w.command(Command::Run("not.discovered".into()));
         assert_eq!(wire.lock().unwrap().requests.len(), before);
         assert!(w.state.last_error.as_ref().unwrap().contains("catalog"));
+    }
+
+    #[test]
+    fn notification_command_sends_marquee_sound_and_light_as_one_admitted_bundle() {
+        let (mut w, wire) = test_link(true);
+        w.hello().unwrap();
+        drain(&mut w);
+        w.command(Command::Notification {
+            text: "Teams: Build 42!".into(),
+            sound: "new.one".into(),
+            color: "purple".into(),
+        });
+        drain(&mut w);
+        let requests = &wire.lock().unwrap().requests;
+        assert_eq!(requests[3]["method"], "oled.marquee");
+        assert_eq!(requests[3]["params"]["text"], "Teams: Build 42!");
+        assert_eq!(requests[4]["method"], "action.run");
+        assert_eq!(requests[4]["params"]["actionId"], "new.one");
+        assert_eq!(requests[5]["method"], "neopixel.notification");
+        assert_eq!(requests[5]["params"]["text"], "Teams: Build 42!");
+        assert_eq!(requests[5]["params"]["color"], "purple");
+        assert_eq!(w.state.activity.len(), 3);
+        assert!(w
+            .state
+            .activity
+            .iter()
+            .all(|activity| activity.state == "queued"));
     }
 
     #[test]

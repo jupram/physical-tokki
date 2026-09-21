@@ -6,7 +6,9 @@ describe("native serial bridge", () => {
     const call = vi.fn();
     const client = createClient(false, call);
     for (const operation of [() => client.ports(), () => client.snapshot(), () => client.connect("COM5"),
-      () => client.disconnect(), () => client.refresh(), () => client.run("discovered.action")]) {
+      () => client.disconnect(), () => client.refresh(), () => client.run("discovered.action"),
+      () => client.marquee("Teams: Build 42!"), () => client.notificationSnapshot(),
+      () => client.requestNotificationAccess(), () => client.setNotificationRelay(true)]) {
       await expect(operation()).rejects.toThrow("Native desktop app required");
     }
     expect(call).not.toHaveBeenCalled();
@@ -20,10 +22,17 @@ describe("native serial bridge", () => {
     expect(call.mock.calls).toEqual([["serial_ports", undefined]]);
     await client.connect("COM12");
     await client.run("future.device.gesture");
+    await client.marquee("Teams: Build 42!");
+    await client.notificationSnapshot();
+    await client.requestNotificationAccess();
+    await client.setNotificationRelay(true);
     await client.refresh();
     await client.disconnect();
     expect(call.mock.calls.slice(1)).toEqual([
       ["serial_connect", { port: "COM12" }], ["serial_run", { actionId: "future.device.gesture" }],
+      ["serial_marquee", { text: "Teams: Build 42!" }],
+      ["notification_snapshot", undefined], ["notification_request_access", undefined],
+      ["notification_set_enabled", { enabled: true }],
       ["serial_refresh", undefined], ["serial_disconnect", undefined],
     ]);
   });

@@ -107,6 +107,21 @@ static void reset_output(void)
     memset(colors, 0, sizeof(colors));
 }
 
+static void test_marquee_renderer(void)
+{
+    uint8_t guarded[TOKKI_OLED_FRAME_SIZE + 2];
+    memset(guarded, 0xA5, sizeof(guarded));
+    assert(tokki_oled_marquee_width("Teams: Build 42!") == 190);
+    assert(tokki_oled_render_marquee(guarded + 1, TOKKI_OLED_FRAME_SIZE,
+                                     "Teams: Build 42!", 12) == ESP_OK);
+    assert(guarded[0] == 0xA5 && guarded[sizeof(guarded) - 1] == 0xA5);
+    assert(tokki_oled_render_marquee(guarded + 1, TOKKI_OLED_FRAME_SIZE,
+                                     "Teams: Build 42!", -120) == ESP_OK);
+    assert(tokki_oled_marquee_width("") == 0);
+    assert(tokki_oled_marquee_width("12345678901234567890123456789012345678901") == 0);
+    assert(tokki_oled_render_marquee(NULL, TOKKI_OLED_FRAME_SIZE, "Hi", 0) == ESP_ERR_INVALID_ARG);
+}
+
 static void test_blink(const char *id, uint8_t red, uint8_t green)
 {
     reset_output();
@@ -518,6 +533,7 @@ static void test_sleeping_eyes(void)
 
 static void test_renderers(void)
 {
+    test_marquee_renderer();
     uint8_t guarded[TOKKI_OLED_FRAME_SIZE + 2];
     memset(guarded, 0xA5, sizeof(guarded));
     for (unsigned frame = 0; frame < 64; ++frame) {

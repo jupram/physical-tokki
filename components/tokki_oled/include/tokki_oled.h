@@ -8,6 +8,7 @@
 #define TOKKI_OLED_WIDTH 128
 #define TOKKI_OLED_HEIGHT 64
 #define TOKKI_OLED_FRAME_SIZE (TOKKI_OLED_WIDTH * TOKKI_OLED_HEIGHT / 8)
+#define TOKKI_OLED_MARQUEE_MAX 40
 
 typedef enum {
     TOKKI_OLED_ART_DRINK_WATER,
@@ -24,3 +25,6 @@ typedef enum {
 esp_err_t tokki_oled_draw_frame(const uint8_t *framebuffer, size_t size);
 esp_err_t tokki_oled_render_art(uint8_t *framebuffer, size_t size,
                                 tokki_oled_art_t art, unsigned frame);
+int tokki_oled_marquee_width(const char *text);
+esp_err_t tokki_oled_render_marquee(uint8_t *framebuffer, size_t size,
+                                    const char *text, int left);
