@@ -32,8 +32,9 @@ import { GesturePreview, IDLE_PREVIEW } from "./gestures/GesturePreview";
 import type { PreviewState } from "./gestures/GesturePreview";
 import { playBundle } from "./gestures/player";
 import type { LaneGestures } from "./gestures/player";
-import { playSound } from "./gestures/audio";
-import type { SpeakerSound } from "./gestures/catalog";
+import { NOTIFICATION_PRESETS, notificationDescription, notificationLanes } from "./notifications";
+import { ScrollingTextInput } from "./gestures/ScrollingTextInput";
+import { DEFAULT_SCROLLING_TEXT, SCROLLING_TEXT_ID, scrollingTextError } from "./gestures/scrollingText";
 
 type View = "device" | "gestures" | "bundles" | "events";
 
@@ -47,20 +48,6 @@ const EMPTY_NOTIFICATION_SNAPSHOT: NotificationSnapshot = {
   lastEvent: null,
   lastError: null,
 };
-
-const NOTIFICATION_PRESETS: QueuedNotification[] = [
-  { source: "Microsoft Teams", text: "Teams: Alex sent a new message", sound: "trill", color: "purple" },
-  { source: "Outlook mail", text: "Mail: Project update received", sound: "chime", color: "blue" },
-  { source: "Outlook meeting reminder", text: "Meeting: Design review starts soon", sound: "whistle", color: "yellow" },
-];
-
-const NOTIFICATION_COLORS = { blue: "#1858ff", purple: "#a72cff", yellow: "#ffd21a" };
-const SOUND_DURATIONS = { trill: 260, chime: 640, whistle: 280 };
-
-function notificationDuration(text: string) {
-  const width = text.length * 12 - 2;
-  return Math.ceil((128 + width) / 2) * 45;
-}
 
 function loadBundles(): Bundle[] {
   if (typeof window === "undefined") return [];
@@ -117,6 +104,7 @@ function App() {
   const [busy, setBusy] = useState(false);
   const [scanning, setScanning] = useState(false);
   const [filter, setFilter] = useState("");
+  const [scrollingText, setScrollingText] = useState(DEFAULT_SCROLLING_TEXT);
   const [notificationRelay, setNotificationRelay] = useState<NotificationSnapshot>(EMPTY_NOTIFICATION_SNAPSHOT);
 
   async function refreshPorts() {
@@ -213,9 +201,9 @@ function App() {
   const [previewCycle, setPreviewCycle] = useState(0);
   const stopRef = useRef<(() => void) | null>(null);
 
-  function previewOnDevice(gesture: GestureDef) {
+  function previewOnDevice(gesture: GestureDef, text?: string) {
     if (!connected) return;
-    void client.run(gesture.id).catch((error) => {
+    void client.run(gesture.id, text).catch((error) => {
       setLocalError(`Could not preview ${gesture.name} on the device: ${String(error)}`);
     });
   }
@@ -225,6 +213,7 @@ function App() {
     stopRef.current = null;
     setPlayingBundle(null);
     setPreview(IDLE_PREVIEW);
+    setSimulationStatus("Local preview ready");
   }
 
   function playSavedBundle(bundle: Bundle) {
@@ -251,33 +240,27 @@ function App() {
 
   function playNotificationPreview(item: QueuedNotification, id: string) {
     stopPreview();
-    const sound = item.sound as SpeakerSound;
-    const duration = notificationDuration(item.text);
-    const speakerDuration = SOUND_DURATIONS[item.sound as keyof typeof SOUND_DURATIONS] ?? 500;
+    let lanes: LaneGestures;
+    try {
+      lanes = notificationLanes(item);
+    } catch (error) {
+      setSimulationStatus(`Could not preview notification: ${String(error)}`);
+      return;
+    }
     const playingId = `notification:${id}`;
     setPlayingBundle(playingId);
     setPreviewCycle((cycle) => cycle + 1);
     setSimulationStatus(`Previewing ${item.source}`);
-    setPreview({
-      oled: { sim: { kind: "marquee", text: item.text }, label: item.text, active: true },
-      led: { sim: { effect: "solid", color: NOTIFICATION_COLORS[item.color] }, label: `${item.color} notification`, active: true },
-      speaker: { sim: { sound }, label: item.sound, active: true },
-    });
-    const stopSound = playSound(sound);
-    const speakerTimer = window.setTimeout(() => {
-      setPreview((current) => ({ ...current, speaker: { ...current.speaker, active: false } }));
-    }, speakerDuration);
-    const finishTimer = window.setTimeout(() => {
-      setPlayingBundle(null);
-      setSimulationStatus("Local preview ready");
-      setPreview(IDLE_PREVIEW);
-      stopRef.current = null;
-    }, duration);
-    stopRef.current = () => {
-      window.clearTimeout(speakerTimer);
-      window.clearTimeout(finishTimer);
-      stopSound();
-    };
+    stopRef.current = playBundle(
+      lanes,
+      (updater) => setPreview((current) => updater(current)),
+      () => {
+        setPlayingBundle(null);
+        setSimulationStatus("Local preview ready");
+        setPreview(IDLE_PREVIEW);
+        stopRef.current = null;
+      },
+    );
   }
 
   function saveBundle(bundle: Bundle) {
@@ -437,7 +420,11 @@ function App() {
                     <span className="device-icon"><Sparkles size={19} /></span>
                     <div className="action-name"><strong>{action.name}</strong><code>{action.id}</code></div>
                     <span className="action-device">{action.device}</span>
-                    <button className="connection-button" title={`Send ${action.name}`} aria-label={`Send ${action.name}`} disabled={!connected || busy || queue.inFlight >= queueCapacity} onClick={() => void command(() => client.run(action.id))}><Play size={16} /> Send</button>
+                    <button className="connection-button" title={`Send ${action.name}`} aria-label={`Send ${action.name}`} disabled={!connected || busy || queue.inFlight >= queueCapacity || (action.id === SCROLLING_TEXT_ID && !!scrollingTextError(scrollingText))} onClick={() => {
+                      if (action.id === SCROLLING_TEXT_ID && scrollingTextError(scrollingText)) return;
+                      void command(() => client.run(action.id, action.id === SCROLLING_TEXT_ID ? scrollingText : undefined));
+                    }}><Play size={16} /> Send</button>
+                    {action.id === SCROLLING_TEXT_ID && <ScrollingTextInput id="send-scrolling-text" value={scrollingText} onChange={setScrollingText} />}
                   </article>
                 ))}
                 {visibleActions.length === 0 && <div className="empty-state">{connecting ? "Fetching all catalog pages…" : connected ? "No gestures match this view." : "Connect on the Device screen to discover gestures."}</div>}
@@ -544,7 +531,7 @@ function App() {
                   return (
                     <div className="integration-row" key={item.source}>
                       <span className={`rule-icon ${index === 1 ? "mail" : ""}`}><Icon size={19} /></span>
-                      <div><strong>{item.source}</strong><small>OLED marquee · {item.sound} · {item.color} light</small></div>
+                      <div><strong>{item.source}</strong><small>{notificationDescription(item)}</small></div>
                       <button className="icon-button" title={`Preview ${item.source}`} aria-label={`Preview ${item.source}`} onClick={() => (playing ? stopPreview() : playNotificationPreview(item, id))}>
                         {playing ? <CircleStop size={17} /> : <Play size={17} fill="currentColor" />}
                       </button>
@@ -552,9 +539,10 @@ function App() {
                   );
                 })}
               </div>
+              <p className="help-text">Eyes first, then the notification title. Email subjects start with "Email :  " (up to 50 printable ASCII characters including the label). Sound and light start alongside the eyes. Requires discovered Scrolling text firmware support.</p>
 
               <div className="notification-preview-heading">
-                <div><strong>Local simulation</strong><small>{simulationStatus}</small></div>
+                <div><strong>Local simulation</strong><small>{simulationStatus} · PC only; no hardware sends or FIFO changes</small></div>
                 {playingBundle?.startsWith("notification:") && <button className="icon-button" title="Stop preview" onClick={stopPreview}><CircleStop size={17} /></button>}
               </div>
               <div className="gesture-preview-stage"><GesturePreview key={previewCycle} state={preview} /></div>
@@ -573,8 +561,8 @@ function App() {
                     return (
                       <li className="notification-queue-row" key={`${item.source}-${item.text}-${index}`}>
                         <span className="queue-position">{index + 1}</span>
-                        <div><strong>{item.source}</strong><p>{item.text}</p></div>
-                        <span className="notification-medium"><i style={{ background: NOTIFICATION_COLORS[item.color] }} />{item.color} · {item.sound}</span>
+                        <div><strong>{item.source}</strong><p>Title: {item.text}</p></div>
+                        <span className="notification-medium">{notificationDescription(item)}</span>
                         <button className="icon-button" title="Preview queued notification" aria-label={`Preview queued notification ${index + 1}`} onClick={() => (playing ? stopPreview() : playNotificationPreview(item, id))}>
                           {playing ? <CircleStop size={17} /> : <Play size={17} fill="currentColor" />}
                         </button>

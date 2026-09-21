@@ -9,7 +9,7 @@
 #define TOKKI_FRAME_MAX 1024
 #define TOKKI_REQUEST_ID_MAX 64
 #define TOKKI_ACTION_ID_MAX 96
-#define TOKKI_MARQUEE_TEXT_MAX 40
+#define TOKKI_MARQUEE_TEXT_MAX 50
 #define TOKKI_NOTIFICATION_LIGHT_BLUE_ACTION_ID "neopixel.notification.blue"
 #define TOKKI_NOTIFICATION_LIGHT_PURPLE_ACTION_ID "neopixel.notification.purple"
 #define TOKKI_NOTIFICATION_LIGHT_YELLOW_ACTION_ID "neopixel.notification.yellow"

@@ -162,6 +162,11 @@ static esp_err_t run_sunrise(void)
     return animate_art(TOKKI_OLED_ART_SUNRISE, 64, OLED_GESTURE_FRAME_MS);
 }
 
+static esp_err_t run_scrolling_text(void)
+{
+    return tokki_oled_scroll_text(TOKKI_OLED_SCROLLING_TEXT_DEFAULT);
+}
+
 const tokki_action_descriptor_t TOKKI_OLED_HAPPY_ACTION = {
     .id = "oled.happy", .display_name = "Happy eyes",
     .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_happy,
@@ -258,4 +263,8 @@ const tokki_action_descriptor_t TOKKI_OLED_NIGHT_SKY_ACTION = {
 const tokki_action_descriptor_t TOKKI_OLED_SUNRISE_ACTION = {
     .id = "oled.sunrise", .display_name = "Sunrise",
     .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_sunrise,
+};
+const tokki_action_descriptor_t TOKKI_OLED_SCROLLING_TEXT_ACTION = {
+    .id = TOKKI_OLED_SCROLLING_TEXT_ACTION_ID, .display_name = "Scrolling text",
+    .device = TOKKI_DEVICE_OLED, .cancellable = false, .run = run_scrolling_text,
 };

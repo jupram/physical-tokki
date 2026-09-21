@@ -21,7 +21,7 @@ if (-not (Get-Command cl.exe -ErrorAction SilentlyContinue)) {
     Enter-VsDevShell -VsInstallPath $installation -SkipAutomaticLocation -DevCmdArguments '-arch=x64 -host_arch=x64' | Out-Null
 }
 
-$build = Join-Path ([System.IO.Path]::GetTempPath()) "tokki-host-$([guid]::NewGuid())"
+$build = Join-Path $repo ".host-build-$([guid]::NewGuid())"
 New-Item -ItemType Directory -Path $build | Out-Null
 $sources = @(
     "$PSScriptRoot/test_gestures.c"
@@ -32,6 +32,7 @@ $sources = @(
     "$repo/components/tokki_gestures/src/oled/oled_actions.c"
     "$repo/components/tokki_oled/pet_eyes.c"
     "$repo/components/tokki_oled/oled_art.c"
+    "$repo/components/tokki_oled/oled_scroll.c"
     "$repo/components/tokki_gestures/src/speaker/speaker_actions.c"
     "$repo/components/tokki_speaker/speaker_tone.c"
 )
@@ -78,6 +79,7 @@ try {
             "$repo\components\tokki_neopixel\neopixel_effects.c"
             "$repo\components\tokki_oled\pet_eyes.c"
             "$repo\components\tokki_oled\oled_art.c"
+            "$repo\components\tokki_oled\oled_scroll.c"
         )
         & cl.exe /nologo /TC /std:c11 /W4 /WX @includes $runtimeInclude @workerSources /Fetokki-workers.exe
         if ($LASTEXITCODE -ne 0) { throw 'Worker host test compilation failed.' }

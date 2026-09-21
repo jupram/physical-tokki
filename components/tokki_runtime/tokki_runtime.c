@@ -18,8 +18,9 @@
 #include "tokki_protocol.h"
 
 #define MARQUEE_ACTION_ID "oled.marquee"
-#define MARQUEE_FRAME_MS 45
-#define MARQUEE_STEP_PIXELS 2
+
+_Static_assert(TOKKI_MARQUEE_TEXT_MAX == TOKKI_OLED_MARQUEE_MAX,
+               "Protocol and OLED marquee limits must match");
 
 static const char *TAG = "tokki_runtime";
 static tokki_protocol_t s_protocol;
@@ -79,28 +80,6 @@ static void receive_commands(void *context)
     }
 }
 
-static esp_err_t run_marquee(const char *text)
-{
-    _Static_assert(TOKKI_MARQUEE_TEXT_MAX == TOKKI_OLED_MARQUEE_MAX,
-                   "Protocol and OLED marquee limits must match");
-    int width = tokki_oled_marquee_width(text);
-    if (width == 0) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    uint8_t framebuffer[TOKKI_OLED_FRAME_SIZE];
-    for (int left = TOKKI_OLED_WIDTH; left > -width; left -= MARQUEE_STEP_PIXELS) {
-        esp_err_t result = tokki_oled_render_marquee(framebuffer, sizeof(framebuffer), text, left);
-        if (result == ESP_OK) {
-            result = tokki_oled_draw_frame(framebuffer, sizeof(framebuffer));
-        }
-        if (result != ESP_OK) {
-            return result;
-        }
-        vTaskDelay(pdMS_TO_TICKS(MARQUEE_FRAME_MS));
-    }
-    return ESP_OK;
-}
-
 static esp_err_t run_notification_light(const tokki_job_t *job)
 {
     uint8_t red = 0;
@@ -122,8 +101,8 @@ static esp_err_t run_notification_light(const tokki_job_t *job)
     if (result != ESP_OK) {
         return result;
     }
-    for (int left = TOKKI_OLED_WIDTH; left > -width; left -= MARQUEE_STEP_PIXELS) {
-        vTaskDelay(pdMS_TO_TICKS(MARQUEE_FRAME_MS));
+    for (int left = TOKKI_OLED_WIDTH; left > -width; left -= TOKKI_OLED_MARQUEE_STEP_PIXELS) {
+        vTaskDelay(pdMS_TO_TICKS(TOKKI_OLED_MARQUEE_FRAME_MS));
     }
     return tokki_neopixel_set_color(0, 0, 0);
 }
@@ -148,8 +127,9 @@ static void execute_actions(void *context)
         xSemaphoreGive(s_lock);
         if (pending) {
             esp_err_t result;
-            if (strcmp(job.action_id, MARQUEE_ACTION_ID) == 0) {
-                result = run_marquee(job.text);
+            if (strcmp(job.action_id, MARQUEE_ACTION_ID) == 0 ||
+                strcmp(job.action_id, TOKKI_OLED_SCROLLING_TEXT_ACTION_ID) == 0) {
+                result = tokki_oled_scroll_text(job.text);
             } else if (strcmp(job.action_id, TOKKI_NOTIFICATION_LIGHT_BLUE_ACTION_ID) == 0 ||
                        strcmp(job.action_id, TOKKI_NOTIFICATION_LIGHT_PURPLE_ACTION_ID) == 0 ||
                        strcmp(job.action_id, TOKKI_NOTIFICATION_LIGHT_YELLOW_ACTION_ID) == 0) {

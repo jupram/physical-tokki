@@ -42,13 +42,27 @@ static unsigned completions;
 static unsigned faults;
 static unsigned idle_errors;
 static unsigned logs;
-#define MAX_WRITES 128
+#define MAX_WRITES 1024
 static TickType_t write_times[MAX_WRITES];
 static uint8_t colors[MAX_WRITES];
 static uint32_t random_seed = 12345;
 static uint8_t last_oled_frame[TOKKI_OLED_FRAME_SIZE];
 static uint8_t preempted_frame[TOKKI_OLED_FRAME_SIZE];
 static jmp_buf worker_done;
+static bool scroll_jobs;
+static bool active_job;
+static unsigned fail_title_frame;
+static unsigned job_draws[4];
+static unsigned job_delays[4];
+static TickType_t job_starts[4];
+static TickType_t job_ends[4];
+static const tokki_job_t text_jobs[] = {
+    {.request_id = "eyes", .action_id = "oled.curious", .text = ""},
+    {.request_id = "title", .action_id = "oled.scrolling_text",
+     .text = "12345678901234567890123456789012345678901234567890"},
+    {.request_id = "manual", .action_id = "oled.scrolling_text", .text = "Hello from Tokki!"},
+    {.request_id = "legacy", .action_id = "oled.marquee", .text = "Teams: Build 42!"},
+};
 
 BaseType_t xTaskCreate(TaskFunction_t function, const char *name, uint32_t stack_depth,
                        void *argument, UBaseType_t priority, TaskHandle_t *handle)
@@ -103,6 +117,10 @@ uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t timeout)
         return 1;
     }
     last_wait = timeout;
+    if (scroll_jobs) {
+        assert(completions == 4 && !active_job);
+        longjmp(worker_done, 1);
+    }
     if (lead_in_waits > 0) {
         --lead_in_waits;
         now += timeout;
@@ -138,7 +156,12 @@ uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t timeout)
 
 void vTaskDelay(TickType_t ticks)
 {
-    (void) ticks;
+    if (scroll_jobs && active_job) {
+        assert(!locked && ticks == (completions == 0 ? 90U : 45U));
+        ++job_delays[completions];
+        now += ticks;
+        return;
+    }
     assert(false && "Idle playback must never use a blocking gesture runner");
 }
 
@@ -168,12 +191,24 @@ static esp_err_t record_write(void)
 {
     assert(!locked && writes < MAX_WRITES);
     write_times[writes++] = now;
+    if (scroll_jobs && active_job && completions == 1 && job_draws[1] == fail_title_frame) {
+        return ESP_FAIL;
+    }
     return fail_idle && writes == 1 ? ESP_FAIL : ESP_OK;
 }
 
 esp_err_t tokki_oled_draw_frame(const uint8_t *frame, size_t length)
 {
     assert(device == TOKKI_DEVICE_OLED && frame != NULL && length == TOKKI_OLED_FRAME_SIZE);
+    if (scroll_jobs && active_job) {
+        if (completions > 0) {
+            uint8_t expected[TOKKI_OLED_FRAME_SIZE];
+            assert(tokki_oled_render_marquee(expected, sizeof(expected), text_jobs[completions].text,
+                   128 - (int) job_draws[completions] * 2) == ESP_OK);
+            assert(memcmp(frame, expected, length) == 0);
+        }
+        ++job_draws[completions];
+    }
     memcpy(last_oled_frame, frame, length);
     return record_write();
 }
@@ -201,14 +236,32 @@ void tokki_protocol_feed(tokki_protocol_t *protocol, const char *bytes, size_t l
 bool tokki_protocol_start_next_for_device(tokki_protocol_t *protocol, tokki_device_t requested, tokki_job_t *job)
 {
     assert(protocol != NULL && locked && requested == device);
+    if (scroll_jobs) {
+        assert(!active_job);
+        if (completions == 4) return false;
+        *job = text_jobs[completions];
+        active_job = true;
+        job_starts[completions] = now;
+        ++actions;
+        return true;
+    }
     if (!pending[requested]) return false;
     pending[requested] = false;
     strcpy_s(job->request_id, sizeof(job->request_id), "manual");
     strcpy_s(job->action_id, sizeof(job->action_id), "test.action");
+    job->text[0] = '\0';
     return true;
 }
 esp_err_t tokki_action_run(const char *id)
 {
+    if (scroll_jobs) {
+        assert(!locked && active_job && completions == 0 && strcmp(id, "oled.curious") == 0);
+        uint8_t eyes[TOKKI_OLED_FRAME_SIZE];
+        pet_eyes_render(eyes, sizeof(eyes), 128, 64, PET_EYES_CURIOUS, 0);
+        esp_err_t result = tokki_oled_draw_frame(eyes, sizeof(eyes));
+        if (result == ESP_OK) vTaskDelay(90);
+        return result;
+    }
     assert(!locked && strcmp(id, "test.action") == 0 && writes == writes_before_action);
     ++actions;
     if (device == TOKKI_DEVICE_OLED) {
@@ -219,6 +272,16 @@ esp_err_t tokki_action_run(const char *id)
 }
 void tokki_protocol_finish(tokki_protocol_t *protocol, const tokki_job_t *job, esp_err_t result)
 {
+    if (scroll_jobs) {
+        assert(protocol != NULL && locked && active_job);
+        assert(strcmp(job->request_id, text_jobs[completions].request_id) == 0);
+        assert(strcmp(job->action_id, text_jobs[completions].action_id) == 0);
+        assert(result == (completions == 1 && fail_title_frame != 0 ? ESP_FAIL : ESP_OK));
+        job_ends[completions] = now;
+        active_job = false;
+        ++completions;
+        return;
+    }
     assert(protocol != NULL && locked && strcmp(job->request_id, "manual") == 0);
     assert(result == (fail_action ? ESP_FAIL : ESP_OK));
     ++completions;
@@ -252,6 +315,36 @@ static void run_worker(tokki_device_t target, bool failed_idle, bool failed_acti
         assert(false);
     }
     assert(!locked);
+}
+
+static void test_scrolling_worker(void)
+{
+    scroll_jobs = true;
+    const unsigned failures[] = {0, 1, 182, 363};
+    for (unsigned failure = 0; failure < sizeof(failures) / sizeof(failures[0]); ++failure) {
+        fail_title_frame = failures[failure];
+        memset(job_draws, 0, sizeof(job_draws));
+        memset(job_delays, 0, sizeof(job_delays));
+        run_worker(TOKKI_DEVICE_OLED, false, false, false, 0, 0);
+        assert(actions == 4 && completions == 4);
+        assert(job_draws[0] == 1 && job_delays[0] == 1);
+        assert(job_draws[1] == (fail_title_frame != 0 ? fail_title_frame : 363));
+        assert(job_delays[1] == (fail_title_frame != 0 ? fail_title_frame - 1 : 363));
+        assert(job_draws[2] == 165 && job_delays[2] == 165);
+        assert(job_draws[3] == 159 && job_delays[3] == 159);
+        assert(job_ends[0] == 90 && job_starts[1] == job_ends[0]);
+        for (unsigned index = 1; index < 4; ++index) {
+            assert(job_ends[index] - job_starts[index] == job_delays[index] * 45);
+            if (index < 3) assert(job_starts[index + 1] == job_ends[index]);
+        }
+        assert(writes == job_draws[0] + job_draws[1] + job_draws[2] + job_draws[3] + 1);
+        assert(faults == (fail_title_frame != 0 ? 1U : 0U) && idle_errors == 0);
+        uint8_t neutral[TOKKI_OLED_FRAME_SIZE];
+        pet_eyes_render(neutral, sizeof(neutral), 128, 64, PET_EYES_HAPPY, 0);
+        assert(memcmp(last_oled_frame, neutral, sizeof(neutral)) == 0);
+        assert(last_wait == 60 && write_times[writes - 1] == job_ends[3]);
+    }
+    scroll_jobs = false;
 }
 
 int main(void)
@@ -336,6 +429,7 @@ int main(void)
             assert(last_wait == 60 && pending[TOKKI_DEVICE_NEOPIXEL]);
         }
     }
-    puts("PASS: real worker idle deadlines, cross-device notifications, PC priority (including sleep/night sky), reset, errors and tick wrap");
+    test_scrolling_worker();
+    puts("PASS: real worker idle deadlines, cross-device notifications, PC priority, eyes/title FIFO, default/legacy scrolling, reset, errors and tick wrap");
     return 0;
 }

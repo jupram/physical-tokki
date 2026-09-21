@@ -81,14 +81,12 @@ pub enum Command {
     Refresh,
     Run(String),
     Marquee(String),
-    NotificationLight {
-        text: String,
-        color: String,
-    },
+    ScrollingText(String),
     Notification {
         text: String,
+        oled: String,
         sound: String,
-        color: String,
+        light: String,
     },
 }
 
@@ -121,21 +119,22 @@ impl Transport {
             Command::Run(id) if !protocol::valid_action_id(id) => {
                 return Err("Invalid gesture ID".into());
             }
-            Command::Marquee(text) if !protocol::valid_marquee_text(text) => {
-                return Err("Marquee text must be 1 to 40 printable ASCII characters".into());
-            }
-            Command::NotificationLight { text, color }
-                if !protocol::valid_marquee_text(text)
-                    || !matches!(color.as_str(), "blue" | "purple" | "yellow") =>
+            Command::Marquee(text) | Command::ScrollingText(text)
+                if !protocol::valid_marquee_text(text) =>
             {
-                return Err("Invalid notification light text or color".into());
+                return Err("Scrolling text must be 1 to 50 printable ASCII characters".into());
             }
-            Command::Notification { text, sound, color }
-                if !protocol::valid_marquee_text(text)
-                    || !protocol::valid_action_id(sound)
-                    || !matches!(color.as_str(), "blue" | "purple" | "yellow") =>
+            Command::Notification {
+                text,
+                oled,
+                sound,
+                light,
+            } if !protocol::valid_marquee_text(text)
+                || !protocol::valid_action_id(oled)
+                || !protocol::valid_action_id(sound)
+                || !protocol::valid_action_id(light) =>
             {
-                return Err("Invalid notification marquee, sound or color".into());
+                return Err("Invalid notification title or gesture IDs".into());
             }
             _ => {}
         }
@@ -150,6 +149,54 @@ impl Transport {
             .map(|s| s.clone())
             .map_err(|_| "Serial state unavailable".into())
     }
+}
+
+fn check_capacity(snapshot: &Snapshot, requested: usize) -> Result<(), String> {
+    let active_devices = snapshot
+        .actions
+        .iter()
+        .map(|action| action.device.as_str())
+        .collect::<HashSet<_>>()
+        .len();
+    let waiting_capacity = snapshot
+        .hello
+        .as_ref()
+        .map_or(0, |hello| hello.queue_capacity);
+    let in_flight_count = snapshot
+        .activity
+        .iter()
+        .filter(|a| in_flight(&a.state))
+        .count();
+    if in_flight_count + requested > active_devices + waiting_capacity {
+        return Err("Local queue full: not enough device workers and waiting slots".into());
+    }
+    Ok(())
+}
+
+pub(crate) fn validate_notification_actions(
+    snapshot: &Snapshot,
+    oled: &str,
+    sound: &str,
+    light: &str,
+) -> Result<(), String> {
+    if snapshot.status != "connected" {
+        return Err("Connect and finish discovery before sending notifications".into());
+    }
+    for (id, device) in [
+        (oled, "oled"),
+        (sound, "speaker"),
+        (light, "neopixel"),
+        (protocol::SCROLLING_TEXT_ACTION, "oled"),
+    ] {
+        if !snapshot
+            .actions
+            .iter()
+            .any(|action| action.id == id && action.device == device)
+        {
+            return Err(format!("Required notification gesture {id} is unavailable; update firmware and refresh the catalog"));
+        }
+    }
+    check_capacity(snapshot, 4)
 }
 
 #[derive(Clone)]
@@ -329,6 +376,63 @@ impl Worker {
         self.hello()
     }
 
+    fn run_catalog_action(
+        &mut self,
+        action_id: String,
+        text: Option<String>,
+    ) -> Result<(), String> {
+        if self.state.status != "connected" {
+            self.error("Connect and finish discovery before sending a gesture".into());
+            return Ok(());
+        }
+        let Some(action) = self
+            .state
+            .actions
+            .iter()
+            .find(|a| a.id == action_id)
+            .cloned()
+        else {
+            self.error("Gesture is not in the current device catalog".into());
+            return Ok(());
+        };
+        if let Some(text) = text.as_ref() {
+            if action_id != protocol::SCROLLING_TEXT_ACTION || !protocol::valid_marquee_text(text) {
+                self.error("Scrolling text must be 1 to 50 printable ASCII characters".into());
+                return Ok(());
+            }
+        }
+        if let Err(error) = check_capacity(&self.state, 1) {
+            self.error(error);
+            return Ok(());
+        }
+        let id = self.next_id();
+        if self.state.activity.len() >= HISTORY_LIMIT {
+            if let Some(index) = self
+                .state
+                .activity
+                .iter()
+                .position(|a| !in_flight(&a.state))
+            {
+                self.state.activity.remove(index);
+            }
+        }
+        self.state.activity.push(Activity {
+            request_id: id.clone(),
+            action_id: action_id.clone(),
+            name: action.name,
+            state: "sending".into(),
+            message: "Awaiting firmware acceptance".into(),
+            updated_at: now_ms(),
+        });
+        self.state.last_error = None;
+        self.publish();
+        let mut params = json!({"actionId": action_id});
+        if let Some(text) = text {
+            params["text"] = Value::String(text);
+        }
+        self.send(id, "action.run", params, PendingKind::Run)
+    }
+
     fn command(&mut self, command: Command) {
         let result = match command {
             Command::Connect(name) => self.connect(name),
@@ -349,74 +453,9 @@ impl Worker {
                 self.publish();
                 self.page(0)
             }
-            Command::Run(action_id) => {
-                if self.state.status != "connected" {
-                    self.error("Connect and finish discovery before sending a gesture".into());
-                    return;
-                }
-                let Some(action) = self
-                    .state
-                    .actions
-                    .iter()
-                    .find(|a| a.id == action_id)
-                    .cloned()
-                else {
-                    self.error("Gesture is not in the current device catalog".into());
-                    return;
-                };
-                let active_devices = self
-                    .state
-                    .actions
-                    .iter()
-                    .map(|action| action.device.as_str())
-                    .collect::<HashSet<_>>()
-                    .len();
-                let waiting_capacity = self
-                    .state
-                    .hello
-                    .as_ref()
-                    .map_or(0, |hello| hello.queue_capacity);
-                if self
-                    .state
-                    .activity
-                    .iter()
-                    .filter(|a| in_flight(&a.state))
-                    .count()
-                    >= active_devices + waiting_capacity
-                {
-                    self.error(
-                        "Local queue full: all device workers and waiting slots are occupied"
-                            .into(),
-                    );
-                    return;
-                }
-                let id = self.next_id();
-                if self.state.activity.len() >= HISTORY_LIMIT {
-                    if let Some(index) = self
-                        .state
-                        .activity
-                        .iter()
-                        .position(|a| !in_flight(&a.state))
-                    {
-                        self.state.activity.remove(index);
-                    }
-                }
-                self.state.activity.push(Activity {
-                    request_id: id.clone(),
-                    action_id: action_id.clone(),
-                    name: action.name,
-                    state: "sending".into(),
-                    message: "Awaiting firmware acceptance".into(),
-                    updated_at: now_ms(),
-                });
-                self.state.last_error = None;
-                self.publish();
-                self.send(
-                    id,
-                    "action.run",
-                    json!({"actionId":action_id}),
-                    PendingKind::Run,
-                )
+            Command::Run(action_id) => self.run_catalog_action(action_id, None),
+            Command::ScrollingText(text) => {
+                self.run_catalog_action(protocol::SCROLLING_TEXT_ACTION.into(), Some(text))
             }
             Command::Marquee(text) => {
                 if self.state.status != "connected" {
@@ -436,38 +475,34 @@ impl Worker {
                 self.publish();
                 self.send(id, "oled.marquee", json!({"text":text}), PendingKind::Run)
             }
-            Command::NotificationLight { text, color } => {
-                if self.state.status != "connected" {
+            Command::Notification {
+                text,
+                oled,
+                sound,
+                light,
+            } => {
+                if !protocol::valid_marquee_text(&text) {
                     self.error(
-                        "Connect and finish discovery before sending a notification light".into(),
+                        "Notification title must be 1 to 50 printable ASCII characters".into(),
                     );
                     return;
                 }
-                let id = self.next_id();
-                self.state.activity.push(Activity {
-                    request_id: id.clone(),
-                    action_id: format!("neopixel.notification.{color}"),
-                    name: "Notification light".into(),
-                    state: "sending".into(),
-                    message: "Awaiting firmware acceptance".into(),
-                    updated_at: now_ms(),
-                });
-                self.state.last_error = None;
-                self.publish();
-                self.send(
-                    id,
-                    "neopixel.notification",
-                    json!({"text":text,"color":color}),
-                    PendingKind::Run,
-                )
-            }
-            Command::Notification { text, sound, color } => {
-                self.command(Command::Marquee(text.clone()));
-                if self.state.status == "connected" {
-                    self.command(Command::Run(sound));
+                if let Err(error) =
+                    validate_notification_actions(&self.state, &oled, &sound, &light)
+                {
+                    self.error(error);
+                    return;
                 }
-                if self.state.status == "connected" {
-                    self.command(Command::NotificationLight { text, color });
+                for command in [
+                    Command::Run(oled),
+                    Command::Run(sound),
+                    Command::Run(light),
+                    Command::ScrollingText(text),
+                ] {
+                    if self.state.status != "connected" {
+                        break;
+                    }
+                    self.command(command);
                 }
                 return;
             }
@@ -957,31 +992,156 @@ mod tests {
         assert!(w.state.last_error.as_ref().unwrap().contains("catalog"));
     }
 
+    fn notification_catalog(w: &mut Worker) {
+        w.state.actions = [
+            ("oled.curious", "oled"),
+            ("oled.happy", "oled"),
+            ("oled.surprised", "oled"),
+            ("speaker.trill", "speaker"),
+            ("speaker.chime", "speaker"),
+            ("speaker.whistle", "speaker"),
+            ("neopixel.rainbow", "neopixel"),
+            ("neopixel.pulse_blue", "neopixel"),
+            ("neopixel.blink_yellow", "neopixel"),
+            (protocol::SCROLLING_TEXT_ACTION, "oled"),
+        ]
+        .into_iter()
+        .map(|(id, device)| Action {
+            id: id.into(),
+            name: id.into(),
+            device: device.into(),
+            cancellable: false,
+        })
+        .collect();
+    }
+
+    fn teams_notification(text: &str) -> Command {
+        Command::Notification {
+            text: text.into(),
+            oled: "oled.curious".into(),
+            sound: "speaker.trill".into(),
+            light: "neopixel.rainbow".into(),
+        }
+    }
+
     #[test]
-    fn notification_command_sends_marquee_sound_and_light_as_one_admitted_bundle() {
+    fn notifications_send_only_catalog_actions_with_eyes_before_title() {
+        for (oled, sound, light) in [
+            ("oled.curious", "speaker.trill", "neopixel.rainbow"),
+            ("oled.happy", "speaker.chime", "neopixel.pulse_blue"),
+            ("oled.surprised", "speaker.whistle", "neopixel.blink_yellow"),
+        ] {
+            let (mut w, wire) = test_link(true);
+            w.hello().unwrap();
+            drain(&mut w);
+            notification_catalog(&mut w);
+            let title = "T".repeat(50);
+            w.command(Command::Notification {
+                text: title.clone(),
+                oled: oled.into(),
+                sound: sound.into(),
+                light: light.into(),
+            });
+            drain(&mut w);
+            let requests = &wire.lock().unwrap().requests;
+            assert_eq!(requests.len(), 7);
+            for (request, expected_id) in
+                requests[3..]
+                    .iter()
+                    .zip([oled, sound, light, protocol::SCROLLING_TEXT_ACTION])
+            {
+                assert_eq!(request["method"], "action.run");
+                assert_eq!(request["params"]["actionId"], expected_id);
+                assert!(request["params"].get("color").is_none());
+            }
+            assert!(requests[3..6]
+                .iter()
+                .all(|request| request["params"].get("text").is_none()));
+            assert_eq!(requests[6]["params"]["text"], title);
+            assert_eq!(w.state.activity.len(), 4);
+            assert!(w
+                .state
+                .activity
+                .iter()
+                .all(|activity| activity.state == "queued"));
+        }
+    }
+
+    #[test]
+    fn notification_preflight_prevents_partial_output_on_missing_actions_or_capacity() {
+        for missing in [
+            "oled.curious",
+            "speaker.trill",
+            "neopixel.rainbow",
+            protocol::SCROLLING_TEXT_ACTION,
+        ] {
+            let (mut w, wire) = test_link(true);
+            w.hello().unwrap();
+            drain(&mut w);
+            notification_catalog(&mut w);
+            w.state.actions.retain(|action| action.id != missing);
+            w.command(teams_notification("Review"));
+            assert_eq!(wire.lock().unwrap().requests.len(), 3);
+            assert!(w.state.activity.is_empty());
+            assert!(w.state.last_error.as_ref().unwrap().contains(missing));
+        }
         let (mut w, wire) = test_link(true);
         w.hello().unwrap();
         drain(&mut w);
-        w.command(Command::Notification {
-            text: "Teams: Build 42!".into(),
-            sound: "new.one".into(),
-            color: "purple".into(),
-        });
-        drain(&mut w);
-        let requests = &wire.lock().unwrap().requests;
-        assert_eq!(requests[3]["method"], "oled.marquee");
-        assert_eq!(requests[3]["params"]["text"], "Teams: Build 42!");
-        assert_eq!(requests[4]["method"], "action.run");
-        assert_eq!(requests[4]["params"]["actionId"], "new.one");
-        assert_eq!(requests[5]["method"], "neopixel.notification");
-        assert_eq!(requests[5]["params"]["text"], "Teams: Build 42!");
-        assert_eq!(requests[5]["params"]["color"], "purple");
-        assert_eq!(w.state.activity.len(), 3);
+        notification_catalog(&mut w);
+        w.state.actions[0].device = "speaker".into();
+        w.command(teams_notification("Review"));
+        assert_eq!(wire.lock().unwrap().requests.len(), 3);
         assert!(w
             .state
-            .activity
-            .iter()
-            .all(|activity| activity.state == "queued"));
+            .last_error
+            .as_ref()
+            .unwrap()
+            .contains("oled.curious"));
+        w.state.actions[0].device = "oled".into();
+        for _ in 0..4 {
+            w.state.activity.push(activity("queued"));
+        }
+        w.command(teams_notification("Review"));
+        assert_eq!(wire.lock().unwrap().requests.len(), 3);
+        assert!(w.state.last_error.as_ref().unwrap().contains("queue full"));
+    }
+
+    #[test]
+    fn scrolling_text_validates_fifty_character_boundary_and_catalog_membership() {
+        let (mut w, wire) = test_link(true);
+        w.hello().unwrap();
+        drain(&mut w);
+        w.command(Command::ScrollingText("Review".into()));
+        assert_eq!(wire.lock().unwrap().requests.len(), 3);
+        assert!(w.state.last_error.as_ref().unwrap().contains("catalog"));
+        notification_catalog(&mut w);
+        for invalid in [
+            "".to_owned(),
+            "x".repeat(51),
+            "line\nbreak".into(),
+            "caf\u{e9}".into(),
+        ] {
+            w.command(Command::ScrollingText(invalid.clone()));
+            w.command(teams_notification(&invalid));
+            assert_eq!(wire.lock().unwrap().requests.len(), 3);
+            assert!(w
+                .state
+                .last_error
+                .as_ref()
+                .unwrap()
+                .contains("50 printable"));
+        }
+        w.command(Command::ScrollingText("x".repeat(50)));
+        drain(&mut w);
+        assert_eq!(
+            wire.lock().unwrap().requests[3]["params"]["text"],
+            "x".repeat(50)
+        );
+        assert_eq!(
+            w.state.activity[0].action_id,
+            protocol::SCROLLING_TEXT_ACTION
+        );
     }
 
     #[test]

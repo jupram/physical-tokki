@@ -3,6 +3,7 @@ import type { LedSim, Medium, OledSim, SpeakerSim } from "./catalog";
 import { MEDIUM_LABEL } from "./catalog";
 import { SkyPreview } from "./SkyPreview";
 import { SleepingPreview } from "./SleepingPreview";
+import { scrollingTextDuration } from "./scrollingText";
 
 export type PreviewLane<T> = { sim?: T; label: string; active: boolean };
 
@@ -42,12 +43,14 @@ function OledView({ sim, active }: { sim?: OledSim; active: boolean }) {
     );
   }
   if (sim.kind === "marquee") {
-    const width = sim.text.length * 12 - 2;
-    const durationMs = Math.ceil((128 + width) / 2) * 45;
+    const durationMs = scrollingTextDuration(sim.text);
     return (
       <span
         className="pv-marquee"
-        style={{ "--marquee-duration": `${durationMs}ms` } as React.CSSProperties}
+        style={{
+          "--marquee-duration": `${durationMs}ms`,
+          animationPlayState: active ? "running" : "paused",
+        } as React.CSSProperties}
       >
         {sim.text}
       </span>

@@ -1,7 +1,7 @@
 # OLED gestures
 
 This contribution extends the original eyes-only scope to the requested fixed
-reminder message and monochrome art. Owner review of that scope is required.
+reminder message, monochrome art, and user-approved scrolling text.
 
 Actions are finite wrappers over `tokki_oled` and `pet_eyes`, not independent
 display drivers. Happy, sad, curious and surprised eyes run for 48 frames;
@@ -16,6 +16,29 @@ Wink keeps the other eye open;
 thinking dots advance once without an endless loop. No expression implies
 sensor tracking, listening, or real task progress. See the parent catalog for
 exact nominal durations and successful final states.
+
+## Scrolling text
+
+`oled.scrolling_text` is displayed as **Scrolling text** and is appended after
+the existing 47 catalog actions. A parameterless catalog run scrolls exactly
+`Hello from Tokki!`. Serial `action.run` may instead supply `text` containing
+1-50 printable ASCII characters (`0x20`-`0x7E`); empty, non-ASCII, and longer
+values are rejected, not truncated. No other catalog action accepts text.
+
+The hardware-independent `tokki_oled_scroll_text()` driver helper is shared by
+the catalog wrapper, custom runtime jobs, and legacy `oled.marquee`. It uses
+the existing compact marquee font and renderer, starting at x=128 and moving
+left by two pixels every 45 ms while x is greater than the negative text width.
+Nominal duration is `(63 + 6 * character_count) * 45 ms`: 7.425 seconds for
+the default greeting and 16.335 seconds for 50 characters. Frames are clipped
+to the display; the default greeting finishes blank. The runner retains its
+last frame, as before, and propagates the first draw failure without delaying
+or drawing subsequent frames. Once the OLED queue drains, the existing worker
+resumes calm open eyes; no extra restoration frame or idle behavior is added.
+
+Notifications queue their existing eye expression before scrolling the title.
+OLED FIFO ordering ensures the eyes finish first, while existing speaker and
+NeoPixel gestures can run on their independent workers.
 
 ## Sky scenes
 

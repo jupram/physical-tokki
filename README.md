@@ -52,6 +52,11 @@ Manually triggered OLED, status LED, and RGB gestures now run 50% longer
 than the initial prototype, with unchanged frame counts, brightness, and
 final states. Idle frames still use 60 ms; speaker sounds and self-test timings
 are unchanged.
+The new **Scrolling text** OLED action is the exception: it reuses the original
+marquee's two-pixel steps and 45 ms frames. Manual playback defaults to exactly
+`Hello from Tokki!`; `action.run` can supply 1-50 printable ASCII characters as
+`text` for `oled.scrolling_text`. It makes one right-to-left pass, then the
+existing idle behavior resumes after the OLED queue drains.
 See the [gesture duration table](components/tokki_gestures/README.md#current-actions).
 
 The onboard **red status LED (GPIO13)** latches on after a startup failure,
@@ -89,10 +94,15 @@ idf.py flash monitor
    Disconnect does not cancel gestures already accepted by the firmware.
 8. For Teams and Outlook notifications, install the signed Windows MSIX and
   follow the [notification relay setup](docs/windows-notification-setup.md).
-  Each matching notification runs one OLED marquee and speaker cue while the
-  NeoPixel stays purple for Teams, blue for Outlook mail, or yellow for an
-  Outlook meeting/reminder. The NeoPixel turns off with the marquee. The Events
-  screen shows the five-item waiting queue and can simulate each route locally.
+  Teams runs curious eyes + trill + rainbow; Outlook mail runs happy eyes +
+  chime + blue pulse; Outlook meetings/reminders run surprised eyes + whistle +
+  yellow blinks. Each eye gesture is followed by title scrolling through
+  `oled.scrolling_text`, using at most 50 printable ASCII characters. Outlook
+  mail displays `Email :  <subject>` (up to 41 subject characters plus the label).
+  The existing sound/light gestures run concurrently on their own workers and
+  retain their original durations (lights are not held for the entire title).
+  The Events screen shows the five-item waiting queue and can simulate each
+  route locally. Autonomous idle is unchanged.
 
 Serial uses 115200 baud, 8N1, with no flow control. Discovery means reading
 gesture descriptors from the selected pet, not probing every COM device.
@@ -118,7 +128,7 @@ npm run build
 cargo test --manifest-path .\src-tauri\Cargo.toml
 ```
 
-The host suite covers all 47 gestures, including lovey-dovey, shy and sleeping eyes,
+The host suite covers all 48 gestures (24 OLED), including lovey-dovey, shy and sleeping eyes,
 twinkling night sky and sunrise scenes,
 the unchanged twice-repeated bark and the four clean self-test-frequency tones,
 and additionally checks
@@ -126,6 +136,12 @@ protocol framing, complete paginated discovery, bounded per-device FIFO
 execution, cross-device dispatch, lifecycle events, malformed input recovery,
 shuffled idle eye/scene coverage, sleeping/night-sky preemption, breathing brightness/pause bounds, and
 worker preemption/deadline handling (including timer wraparound).
+Scrolling coverage includes the default greeting, 50-character acceptance and
+51-character rejection, printable-ASCII validation, clipped frames, original
+45 ms/two-pixel timing, eyes-before-title FIFO, driver failures and idle
+resumption. The legacy `oled.marquee` and `neopixel.notification` methods remain
+compatible, now accepting up to 50 characters; the notification relay no longer
+uses them.
 The UART/FreeRTOS adapter and actual peripherals still need an on-device
 smoke test: observe several shuffled eye rounds and breathing pauses, send
 OLED/NeoPixel gestures during idle (including during a dark pause), fill the

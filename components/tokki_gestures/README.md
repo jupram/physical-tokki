@@ -3,7 +3,7 @@
 Pet gestures are discoverable actions grouped by the device that performs
 them. The current implementation folders are:
 
-- `src/oled/`: eye expressions, fixed reminder text, and monochrome art
+- `src/oled/`: eye expressions, fixed/scrolling text, and monochrome art
 - `src/speaker/`: notification tones and preinstalled WAV phrases
 - `src/led/`: onboard red status LED actions
 - `src/neopixel/`: addressable RGB LED effects
@@ -51,6 +51,7 @@ assignments in `tokki_board`.
 | `oled.night_sky` | 4.32 s | Twinkling stars, a crescent moon, low hills and one shooting star, then centered happy eyes |
 | `oled.sunrise` | 5.76 s | Sun eases above a horizon, rays extend, holds the morning scene, then centered happy eyes |
 | `oled.sleeping` | 4.32 s | Eyes close into relaxed crescents with floating Zzz, gently bob, then reopen |
+| `oled.scrolling_text` | 7.425 s default; 3.105-16.335 s custom | Scrolling text: one right-to-left pass; default `Hello from Tokki!` ends blank, then production idle resumes |
 | `speaker.drink_water` | About 2.23 s | 1.73 s offline-generated phrase plus silence |
 | `speaker.chirp` | About 0.82 s | Two rising bird-like synthesized chirps plus silence |
 | `speaker.alert` | About 0.68 s | Short 660 Hz alert plus silence |
@@ -69,8 +70,10 @@ assignments in `tokki_board`.
 | `speaker.sonar` | About 0.85 s | Two pings, second at 40% relative gain, plus gap/silence |
 | `speaker.tone_rise` | About 1.22 s | 440/660/880 Hz, 200 ms per note, two 60 ms gaps, plus silence |
 
-There are 47 actions (23 OLED, 6 NeoPixel, 1 status LED, 17 speaker), of which 45
-are new relative to the initial scaffold. Lovey-dovey, shy, sleeping, night sky, and sunrise are included.
+There are 48 actions (24 OLED, 6 NeoPixel, 1 status LED, 17 speaker), of which 46
+are new relative to the initial scaffold. Scrolling text is appended after the
+original 47 entries; existing registry positions and renderer enums are unchanged.
+Lovey-dovey, shy, sleeping, night sky, and sunrise are included.
 The self-test-frequency tones replace `speaker.sigh`, `speaker.boing`,
 `speaker.downstep`, and `speaker.bark`; those four IDs are no longer discovered
 or accepted. Update saved commands to the new IDs above.
@@ -93,12 +96,23 @@ Idle frames still use 60 ms; speaker sounds and standalone self-test timing
 are unchanged. The default rainbow driver API keeps its
 20 ms steps; the gesture uses the timed variant.
 
-All actions have fixed parameters and `cancellable = false`. They block the
+All actions have `cancellable = false`. Only `oled.scrolling_text` accepts an
+optional `text` parameter through `action.run`: 1-50 printable ASCII characters.
+Omitting text (including a direct catalog runner call) uses exactly
+`Hello from Tokki!`; supplying empty text is invalid. It shares the legacy
+marquee renderer and driver runner, moving two pixels per 45 ms frame; the
+90 ms timing above does not apply to scrolling text.
+
+Actions block the
 caller and must run serially per physical device. Durations are nominal,
 excluding initialization, I/O overhead and scheduler rounding. Production
 protocol code calls them from per-device workers, not from its receive loop.
 Different physical devices can run concurrently; concurrent actions on the
-same driver, cancellation, arbitrary text and dynamic names are not supported.
+same driver, cancellation, and dynamic action names are not supported.
+The new text capability does not change the autonomous idle shuffle or add
+sound/light actions. The legacy `oled.marquee` and `neopixel.notification`
+methods remain available with the same 50-character limit; new notifications
+use catalog actions instead. See the [protocol](../../protocol/tokki-serial-v1.md).
 
 Initialize `tokki_board`, `tokki_led` and `tokki_neopixel` as production does.
 The SSD1306 128x64 OLED must use address `0x3C` and the board's STEMMA QT pins.

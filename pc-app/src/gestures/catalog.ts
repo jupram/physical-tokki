@@ -1,6 +1,7 @@
-// Mirrors the firmware gesture registry (components/tokki_gestures). Until the
-// serial `actions.list` method exists, the desktop app carries the same catalog
-// so bundles can be composed and previewed offline.
+// Mirrors the firmware registry for offline previews and bundle composition.
+// Hardware sends still use the catalog discovered through `actions.list`.
+
+import { DEFAULT_SCROLLING_TEXT, SCROLLING_TEXT_ID, scrollingTextDuration, scrollingTextError } from "./scrollingText";
 
 export type Medium = "oled" | "led" | "speaker";
 export type DeviceKind = "oled" | "speaker" | "led" | "neopixel";
@@ -108,24 +109,37 @@ function speaker(id: string, name: string, sound: SpeakerSound, ms: number): Ges
   return { id, name, device: "speaker", medium: "speaker", ms, sim: { speaker: { sound } } };
 }
 
+export function scrollingTextGesture(text = DEFAULT_SCROLLING_TEXT): GestureDef {
+  const error = scrollingTextError(text);
+  if (error) throw new Error(error);
+  return {
+    id: SCROLLING_TEXT_ID,
+    name: "Scrolling text",
+    device: "oled",
+    medium: "oled",
+    ms: scrollingTextDuration(text),
+    sim: { oled: { kind: "marquee", text } },
+  };
+}
+
 export const CATALOG: GestureDef[] = [
   // LED / status
   led("led.blink", "Blink status LED", "led", "blink", "#ff3b30", 1200),
 
   // NeoPixel (RGB) effects
-  led("neopixel.rainbow", "Rainbow", "neopixel", "rainbow", "rainbow", 2560),
+  led("neopixel.rainbow", "Rainbow", "neopixel", "rainbow", "rainbow", 3840),
   led("neopixel.blink_red", "Blink red", "neopixel", "blink", "#ff2a2a", 1200),
-  led("neopixel.blink_yellow", "Blink yellow", "neopixel", "blink", "#ffd21e", 1200),
+  led("neopixel.blink_yellow", "Blink yellow", "neopixel", "blink", "#ffd21e", 1800),
   led("neopixel.blink_green", "Blink green", "neopixel", "blink", "#33d15b", 1200),
   led("neopixel.breathe_teal", "Breathe teal", "neopixel", "breathe", "#1fd1c4", 1320),
-  led("neopixel.pulse_blue", "Pulse blue", "neopixel", "breathe", "#2f6bff", 720),
+  led("neopixel.pulse_blue", "Pulse blue", "neopixel", "breathe", "#2f6bff", 1020),
 
   // OLED eyes
-  eyes("oled.happy", "Happy eyes", "happy", 2880),
+  eyes("oled.happy", "Happy eyes", "happy", 4320),
   eyes("oled.sad", "Sad eyes", "sad", 2880),
-  eyes("oled.surprised", "Surprised eyes", "surprised", 2880),
+  eyes("oled.surprised", "Surprised eyes", "surprised", 4320),
   eyes("oled.blink", "Blink eyes", "blink", 540),
-  eyes("oled.curious", "Curious eyes", "curious", 2880),
+  eyes("oled.curious", "Curious eyes", "curious", 4320),
   eyes("oled.wink", "Wink", "wink", 600),
   eyes("oled.look_left", "Look left", "look_left", 1440),
   eyes("oled.look_right", "Look right", "look_right", 1440),
@@ -146,12 +160,13 @@ export const CATALOG: GestureDef[] = [
   art("oled.exclamation", "Exclamation mark", "exclamation", 1020),
   art("oled.night_sky", "Night sky", "night_sky", 4320),
   art("oled.sunrise", "Sunrise", "sunrise", 5760),
+  scrollingTextGesture(),
 
   // Speaker
   speaker("speaker.drink_water", "Drink water phrase", "drink_water", 1400),
   speaker("speaker.chirp", "Bird-like chirp", "chirp", 700),
   speaker("speaker.alert", "Short alert tone", "alert", 900),
-  speaker("speaker.chime", "Completion chime", "chime", 1100),
+  speaker("speaker.chime", "Completion chime", "chime", 960),
   speaker("speaker.ping", "Short ping", "ping", 500),
   speaker("speaker.tone_low", "Warm tone (440 Hz)", "tone_low", 800),
   speaker("speaker.tone_mid", "Clear tone (660 Hz)", "tone_mid", 800),
